@@ -83,7 +83,7 @@ async function save() {
 </script>
 
 <template>
-  <Modal :title="question ? '编辑题目' : '新增题目'" width="40rem" @close="emit('close')">
+  <Modal :title="question ? '编辑题目' : '新增题目'" width="80%" @close="emit('close')">
     <div class="qf">
       <div class="qf-row">
         <label class="qf-label">分类</label>

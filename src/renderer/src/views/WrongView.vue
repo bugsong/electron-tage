@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtTime, plainText } from '../utils/format'
-import QuestionDetailModal from '../components/QuestionDetailModal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useToastStore } from '../stores/toast'
 
@@ -15,7 +14,6 @@ const loading = ref(true)
 const keyword = ref('')
 const categoryId = ref('')
 const catOptions = ref([])
-const detailFor = ref(null)
 const confirmRemove = ref(null)
 
 async function loadCats() {
@@ -76,6 +74,10 @@ async function reviewWrong() {
     toast.error(err.message || '暂无错题可练习')
   }
 }
+
+function openReview(i) {
+  router.push({ path: '/practice/review', query: { mode: 'wrong', index: i } })
+}
 </script>
 
 <template>
@@ -108,23 +110,14 @@ async function reviewWrong() {
     </div>
 
     <div v-else class="card">
-      <div v-for="q in items" :key="q.questionId" class="list-row wrong-row">
+      <div v-for="(q, i) in items" :key="q.questionId" class="list-row wrong-row">
         <span class="tag tag-danger">错{{ q.wrongCount }}次</span>
-        <span class="wrong-stem" @click="detailFor = q">{{ plainText(q.stem) }}</span>
+        <span class="wrong-stem" @click="openReview(i)">{{ plainText(q.stem) }}</span>
         <span class="wrong-meta">{{ q.categoryName }} · {{ fmtTime(q.lastWrongAt) }}</span>
-        <button class="btn btn-text" @click="detailFor = q">复盘</button>
+        <button class="btn btn-text" @click="openReview(i)">复盘</button>
         <button class="btn btn-text danger" @click="confirmRemove = q">移除</button>
       </div>
     </div>
-
-    <QuestionDetailModal
-      v-if="detailFor"
-      :question="{ ...detailFor, id: detailFor.questionId }"
-      :my-answer="null"
-      show-remove
-      @close="detailFor = null"
-      @remove="confirmRemove = detailFor; detailFor = null"
-    />
 
     <ConfirmDialog
       v-if="confirmRemove"

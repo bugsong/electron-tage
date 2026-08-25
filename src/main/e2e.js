@@ -285,6 +285,129 @@ const UI_SCRIPT = `
       } else {
         results.push('review-paper => NO_PAPER_BTN')
       }
+
+      // 错题复盘冒烟：错题本 → 复盘 → 独立回看页（与答题卡查看一致：QuestionCard + 草纸 + 80% 宽）
+      try {
+        await api.submitPractice(eqs.id, ['B'], 10)
+        location.hash = '#/wrong'
+        await wait(800)
+        const wrongRows = document.querySelectorAll('.wrong-row')
+        const fkBtn = wrongRows[0]
+          ? [...wrongRows[0].querySelectorAll('button')].find((b) => b.innerText.trim() === '复盘')
+          : null
+        if (fkBtn) {
+          fkBtn.click()
+          await wait(1000)
+          const wPage = document.querySelector('.review-page')
+          const wTitle = wPage ? wPage.querySelector('.rv-title') : null
+          const wAppMain = document.querySelector('.app-main')
+          const wMcs = wAppMain ? getComputedStyle(wAppMain) : null
+          const wContentW = wAppMain && wMcs
+            ? wAppMain.clientWidth - parseFloat(wMcs.paddingLeft) - parseFloat(wMcs.paddingRight)
+            : window.innerWidth
+          const wW = wPage ? Math.round((wPage.getBoundingClientRect().width / wContentW) * 100) : -1
+          const wCard = wPage ? wPage.querySelector('.q-card') : null
+          const wBtn = wCard ? wCard.querySelector('.q-head-right button[title="草纸"]') : null
+          results.push('wrong-review-page => ' + (wPage ? 'OK title=' + (wTitle ? wTitle.innerText : '') + ' w=' + wW + '% cards=' + wPage.querySelectorAll('.q-card').length : 'NO_PAGE'))
+          if (wBtn) {
+            wBtn.click()
+            await wait(800)
+            const wTools = document.querySelector('.paper-tools')
+            const wIn = wTools
+              ? wTools.getBoundingClientRect().right <= wCard.getBoundingClientRect().right + 1
+              : false
+            results.push('wrong-review-paper => ' + (wTools ? 'OK(' + wTools.querySelectorAll('.tool-btn').length + 'btns' + (wIn ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+            const wExit = wTools && wTools.querySelector('.tool-btn.exit')
+            if (wExit) wExit.click()
+            await wait(300)
+          } else {
+            results.push('wrong-review-paper => NO_PAPER_BTN')
+          }
+        } else {
+          results.push('wrong-review-page => NO_WRONG_ROW')
+        }
+      } catch (err) {
+        results.push('wrong-review-page => ERR ' + String(err).slice(0, 100))
+      }
+
+      // 笔记/收藏过滤冒烟：两个页面都应具备 搜索题干/全部分类/搜索/重置，且按关键词过滤生效
+      try {
+        await api.toggleFavorite(eq.id)
+        await api.saveNote(eq.id, '过滤测试笔记内容')
+        const polCat = (await api.categoryTree()).find((n) => n.name === '政治理论')
+        const polQ = polCat ? await api.listQuestions({ categoryId: polCat.id, page: 1, pageSize: 1 }) : null
+        if (polQ && polQ.items && polQ.items.length) {
+          const favs = await api.listFavorites({})
+          if (!favs.some((f) => f.questionId === polQ.items[0].id)) await api.toggleFavorite(polQ.items[0].id)
+        }
+
+        location.hash = '#/notes'
+        await wait(800)
+        const nFilter = document.querySelector('.page .filter-bar')
+        const nSel = nFilter ? nFilter.querySelector('select') : null
+        const nBtns = nFilter ? [...nFilter.querySelectorAll('button')].map((b) => b.innerText.trim()).join(',') : ''
+        results.push('notes-filter => ' + (nFilter ? 'OK sel=' + (nSel ? nSel.options.length : 0) + ' btns=' + nBtns : 'NO_FILTER'))
+        const emptyCat = (await api.categoryTree()).find((n) => n.name === '空选项分类')
+        if (nSel && emptyCat) {
+          nSel.value = String(emptyCat.id)
+          nSel.dispatchEvent(new Event('change'))
+          await wait(800)
+          results.push('notes-filter-cat => ' + document.querySelectorAll('.note-item').length + 'items')
+        }
+        if (nSel) {
+          nSel.value = ''
+          nSel.dispatchEvent(new Event('change'))
+          await wait(400)
+        }
+        if (nFilter) {
+          const nInput = nFilter.querySelector('input')
+          nInput.value = '过滤测试'
+          nInput.dispatchEvent(new Event('input'))
+          const nSearch = [...nFilter.querySelectorAll('button')].find((b) => b.innerText.trim() === '搜索')
+          if (nSearch) {
+            nSearch.click()
+            await wait(800)
+          }
+          results.push('notes-filter-search => ' + document.querySelectorAll('.note-item').length + 'items')
+        }
+
+        location.hash = '#/favorites'
+        await wait(800)
+        const fFilter = document.querySelector('.page .filter-bar')
+        const fSel = fFilter ? fFilter.querySelector('select') : null
+        const fBtns = fFilter ? [...fFilter.querySelectorAll('button')].map((b) => b.innerText.trim()).join(',') : ''
+        results.push('favorites-filter => ' + (fFilter ? 'OK sel=' + (fSel ? fSel.options.length : 0) + ' btns=' + fBtns : 'NO_FILTER'))
+        if (fSel && emptyCat) {
+          fSel.value = String(emptyCat.id)
+          fSel.dispatchEvent(new Event('change'))
+          await wait(800)
+          results.push('favorites-filter-cat => ' + document.querySelectorAll('.fav-row').length + 'items')
+        }
+        if (fSel && polCat) {
+          fSel.value = String(polCat.id)
+          fSel.dispatchEvent(new Event('change'))
+          await wait(800)
+          results.push('favorites-filter-topcat => ' + document.querySelectorAll('.fav-row').length + 'items')
+        }
+        if (fSel) {
+          fSel.value = ''
+          fSel.dispatchEvent(new Event('change'))
+          await wait(400)
+        }
+        if (fFilter) {
+          const fInput = fFilter.querySelector('input')
+          fInput.value = '空选项题目'
+          fInput.dispatchEvent(new Event('input'))
+          const fSearch = [...fFilter.querySelectorAll('button')].find((b) => b.innerText.trim() === '搜索')
+          if (fSearch) {
+            fSearch.click()
+            await wait(800)
+          }
+          results.push('favorites-filter-search => ' + document.querySelectorAll('.fav-row').length + 'items')
+        }
+      } catch (err) {
+        results.push('notes-filter => ERR ' + String(err).slice(0, 100))
+      }
     } catch (err) {
       results.push('empty-options => ERR ' + String(err).slice(0, 100))
     }

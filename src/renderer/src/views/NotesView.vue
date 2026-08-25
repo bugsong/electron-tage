@@ -10,18 +10,43 @@ const toast = useToastStore()
 const items = ref([])
 const loading = ref(true)
 const detailFor = ref(null)
+const keyword = ref('')
+const categoryId = ref('')
+const catOptions = ref([])
+
+async function loadCats() {
+  try {
+    const tree = await api.categoryTree()
+    const flat = []
+    for (const n of tree) {
+      flat.push({ id: n.id, name: n.name })
+      for (const c of n.children) flat.push({ id: c.id, name: `　${n.name} › ${c.name}` })
+    }
+    catOptions.value = flat
+  } catch {}
+}
 
 async function load() {
   loading.value = true
   try {
-    items.value = await api.listNotes()
+    items.value = await api.listNotes({
+      keyword: keyword.value.trim(),
+      categoryId: categoryId.value || null
+    })
   } catch (err) {
     toast.error('加载笔记失败：' + (err.message || err))
   } finally {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(async () => {
+  await loadCats()
+  await load()
+})
+
+function search() {
+  load()
+}
 
 function preview(content) {
   return plainText(content).slice(0, 90) || '（空笔记）'
@@ -35,11 +60,26 @@ function preview(content) {
       <span class="page-sub">全部 {{ items.length }} 条，做题时点卡片上的「笔记」即可随题记录</span>
     </div>
 
+    <div class="filter-bar">
+      <input
+        v-model="keyword"
+        class="input filter-search"
+        placeholder="搜索题干…"
+        @keyup.enter="search"
+      />
+      <select v-model="categoryId" class="select filter-cat" @change="load()">
+        <option value="">全部分类</option>
+        <option v-for="c in catOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
+      <button class="btn" @click="search">搜索</button>
+      <button class="btn" @click="keyword = ''; categoryId = ''; load()">重置</button>
+    </div>
+
     <div v-if="loading" class="empty">加载中…</div>
 
     <div v-else-if="!items.length" class="empty">
       <div class="empty-icon">📝</div>
-      <div>还没有笔记，做题时在题目卡片右上角点「笔记」写下心得</div>
+      <div>{{ keyword || categoryId ? '没有符合条件的笔记' : '还没有笔记，做题时在题目卡片右上角点「笔记」写下心得' }}</div>
     </div>
 
     <div v-else class="card">
@@ -62,6 +102,18 @@ function preview(content) {
 </template>
 
 <style scoped>
+.filter-bar {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.filter-search {
+  width: 16rem;
+}
+.filter-cat {
+  width: 13rem;
+}
 .page-sub {
   color: var(--text-2);
   font-size: 0.85rem;

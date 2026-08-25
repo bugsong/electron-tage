@@ -12,18 +12,43 @@ const toast = useToastStore()
 const items = ref([])
 const loading = ref(true)
 const detailFor = ref(null)
+const keyword = ref('')
+const categoryId = ref('')
+const catOptions = ref([])
+
+async function loadCats() {
+  try {
+    const tree = await api.categoryTree()
+    const flat = []
+    for (const n of tree) {
+      flat.push({ id: n.id, name: n.name })
+      for (const c of n.children) flat.push({ id: c.id, name: `　${n.name} › ${c.name}` })
+    }
+    catOptions.value = flat
+  } catch {}
+}
 
 async function load() {
   loading.value = true
   try {
-    items.value = await api.listFavorites()
+    items.value = await api.listFavorites({
+      keyword: keyword.value.trim(),
+      categoryId: categoryId.value || null
+    })
   } catch (err) {
     toast.error('加载收藏失败：' + (err.message || err))
   } finally {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(async () => {
+  await loadCats()
+  await load()
+})
+
+function search() {
+  load()
+}
 
 async function unstar(q) {
   try {
@@ -52,11 +77,26 @@ async function reviewFavorites() {
       <button class="btn btn-primary" :disabled="!items.length" @click="reviewFavorites">收藏练习</button>
     </div>
 
+    <div class="filter-bar">
+      <input
+        v-model="keyword"
+        class="input filter-search"
+        placeholder="搜索题干…"
+        @keyup.enter="search"
+      />
+      <select v-model="categoryId" class="select filter-cat" @change="load()">
+        <option value="">全部分类</option>
+        <option v-for="c in catOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
+      <button class="btn" @click="search">搜索</button>
+      <button class="btn" @click="keyword = ''; categoryId = ''; load()">重置</button>
+    </div>
+
     <div v-if="loading" class="empty">加载中…</div>
 
     <div v-else-if="!items.length" class="empty">
       <div class="empty-icon">⭐</div>
-      <div>还没有收藏题目，做题时点卡片上的星标即可收藏</div>
+      <div>{{ keyword || categoryId ? '没有符合条件的收藏' : '还没有收藏题目，做题时点卡片上的星标即可收藏' }}</div>
     </div>
 
     <div v-else class="card">
@@ -82,6 +122,18 @@ async function reviewFavorites() {
 </template>
 
 <style scoped>
+.filter-bar {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.filter-search {
+  width: 16rem;
+}
+.filter-cat {
+  width: 13rem;
+}
 .fav-row {
   display: flex;
   align-items: center;

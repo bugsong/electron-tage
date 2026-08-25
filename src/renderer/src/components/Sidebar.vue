@@ -27,8 +27,7 @@ const icons = {
 <template>
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <span class="sidebar-logo-tag">刷题</span>
-      <span class="sidebar-logo-text">刷题笔记</span>
+      <span class="sidebar-logo-text">爱硬刷</span>
     </div>
     <nav class="sidebar-nav">
       <router-link
@@ -71,14 +70,6 @@ const icons = {
   align-items: center;
   gap: 0.5rem;
   padding: 0.2rem 0.55rem 1rem;
-}
-.sidebar-logo-tag {
-  background: var(--primary);
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 6px;
 }
 .sidebar-logo-text {
   font-weight: 700;

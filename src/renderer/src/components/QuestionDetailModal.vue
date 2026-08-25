@@ -52,7 +52,7 @@ function optionClass(letter) {
 </script>
 
 <template>
-  <Modal title="题目详情" width="40rem" @close="emit('close')">
+  <Modal title="题目详情" width="80%" @close="emit('close')">
     <div class="d-question">
       <div class="d-meta">
         <span class="tag tag-primary">单选题</span>
@@ -93,6 +93,7 @@ function optionClass(letter) {
 
     <PaperCanvas
       v-if="paperOpen"
+      :open="true"
       :question-id="question.id"
       :question-no="question.no || ''"
       @close="paperOpen = false"

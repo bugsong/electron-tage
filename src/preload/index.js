@@ -19,12 +19,12 @@ const api = {
 
   // 收藏
   toggleFavorite: (questionId) => ipcRenderer.invoke('favorite:toggle', questionId),
-  listFavorites: () => ipcRenderer.invoke('favorite:list'),
+  listFavorites: (filter) => ipcRenderer.invoke('favorite:list', filter),
 
   // 笔记
   getNote: (questionId) => ipcRenderer.invoke('note:get', questionId),
   saveNote: (questionId, content) => ipcRenderer.invoke('note:save', questionId, content),
-  listNotes: () => ipcRenderer.invoke('note:list'),
+  listNotes: (filter) => ipcRenderer.invoke('note:list', filter),
 
   // 草稿笔迹
   getDraft: (questionId) => ipcRenderer.invoke('draft:get', questionId),

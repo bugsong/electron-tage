@@ -170,6 +170,7 @@ async function loadDraft() {
 
 onMounted(async () => {
   await nextTick()
+  if (!canvasRef.value) return
   resize()
   await loadDraft()
   ro = new ResizeObserver(resize)

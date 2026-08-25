@@ -35,14 +35,16 @@ function questionRow(q) {
 
 /** 返回某分类（含其子孙分类）的全部 category id */
 function subtreeIds(categoryId) {
+  const cid = Number(categoryId)
+  if (!Number.isFinite(cid)) return []
   const all = getDb().prepare('SELECT id, parent_id FROM categories').all()
   const children = new Map()
   for (const c of all) {
     if (!children.has(c.parent_id)) children.set(c.parent_id, [])
     children.get(c.parent_id).push(c.id)
   }
-  const ids = [categoryId]
-  const queue = [categoryId]
+  const ids = [cid]
+  const queue = [cid]
   while (queue.length) {
     const cur = queue.shift()
     for (const child of children.get(cur) || []) {
@@ -305,7 +307,20 @@ function registerRecordHandlers() {
     return true
   })
 
-  ipcMain.handle('favorite:list', () => {
+  ipcMain.handle('favorite:list', (e, filter = {}) => {
+    const { keyword = '', categoryId = null } = filter
+    const conds = []
+    const params = []
+    if (categoryId) {
+      const ids = subtreeIds(categoryId)
+      conds.push(`q.category_id IN (${ids.map(() => '?').join(',')})`)
+      params.push(...ids)
+    }
+    if (keyword) {
+      conds.push('q.stem LIKE ?')
+      params.push(`%${keyword}%`)
+    }
+    const where = conds.length ? ' WHERE ' + conds.join(' AND ') : ''
     return getDb()
       .prepare(
         `SELECT f.question_id AS questionId, f.created_at AS createdAt,
@@ -314,9 +329,10 @@ function registerRecordHandlers() {
          FROM favorites f
          JOIN questions q ON q.id = f.question_id
          LEFT JOIN categories c ON c.id = q.category_id
+         ${where}
          ORDER BY f.created_at DESC`
       )
-      .all()
+      .all(...params)
       .map((r) => ({ ...r, options: parseOptions(r.options) }))
   })
 
@@ -337,7 +353,20 @@ function registerRecordHandlers() {
     return { updatedAt: t }
   })
 
-  ipcMain.handle('note:list', () => {
+  ipcMain.handle('note:list', (e, filter = {}) => {
+    const { keyword = '', categoryId = null } = filter
+    const conds = []
+    const params = []
+    if (categoryId) {
+      const ids = subtreeIds(categoryId)
+      conds.push(`q.category_id IN (${ids.map(() => '?').join(',')})`)
+      params.push(...ids)
+    }
+    if (keyword) {
+      conds.push('(q.stem LIKE ? OR n.content LIKE ?)')
+      params.push(`%${keyword}%`, `%${keyword}%`)
+    }
+    const where = conds.length ? ' WHERE ' + conds.join(' AND ') : ''
     return getDb()
       .prepare(
         `SELECT n.question_id AS questionId, n.content, n.created_at AS createdAt, n.updated_at AS updatedAt,
@@ -346,9 +375,10 @@ function registerRecordHandlers() {
          FROM notes n
          JOIN questions q ON q.id = n.question_id
          LEFT JOIN categories c ON c.id = q.category_id
+         ${where}
          ORDER BY n.updated_at DESC`
       )
-      .all()
+      .all(...params)
       .map((r) => ({ ...r, options: parseOptions(r.options) }))
   })
 

@@ -77,7 +77,7 @@ async function copyPath() {
       </div>
     </div>
 
-    <div class="st-about">刷题笔记 · 仅本机使用 · 数据不出本机</div>
+    <div class="st-about">爱硬刷 · 仅本机使用 · 数据不出本机</div>
   </div>
 </template>
 
