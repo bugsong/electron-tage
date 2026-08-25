@@ -1,7 +1,7 @@
 <script setup>
 const items = [
   { to: '/home', label: '首页', icon: 'home' },
-  { to: '/practice', label: '专项练习', icon: 'practice' },
+  { to: '/practice', label: '练多分', icon: 'practice' },
   { to: '/wrong', label: '错题', icon: 'wrong' },
   { to: '/notes', label: '笔记', icon: 'notes' },
   { to: '/favorites', label: '收藏', icon: 'favorites' },

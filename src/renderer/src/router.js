@@ -3,7 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 const routes = [
   { path: '/', redirect: '/home' },
   { path: '/home', name: 'home', component: () => import('./views/HomeView.vue'), meta: { title: '首页' } },
-  { path: '/practice', name: 'practice', component: () => import('./views/PracticeView.vue'), meta: { title: '专项练习' } },
+  { path: '/practice', name: 'practice', component: () => import('./views/PracticeView.vue'), meta: { title: '练多分' } },
   { path: '/practice/session', name: 'session', component: () => import('./views/SessionView.vue'), meta: { title: '刷题' } },
   { path: '/practice/result', name: 'result', component: () => import('./views/ResultView.vue'), meta: { title: '练习结果' } },
   { path: '/practice/review', name: 'review', component: () => import('./views/ReviewView.vue'), meta: { title: '题目回看' } },

@@ -68,6 +68,19 @@ const TEST_SCRIPT = `
     await api.setSetting('theme', 'dark')
     out.设置 = JSON.stringify(await api.getSettings())
 
+    // 草纸画笔/橡皮参数持久化
+    await api.setSetting('penSize', 'bold')
+    await api.setSetting('penColor', '#e5484d')
+    await api.setSetting('eraserSize', 'thin')
+    await api.setSetting('eraserMode', 'stroke')
+    const paperPrefs = await api.getSettings()
+    out.纸笔参数 = JSON.stringify({
+      penSize: paperPrefs.penSize,
+      penColor: paperPrefs.penColor,
+      eraserSize: paperPrefs.eraserSize,
+      eraserMode: paperPrefs.eraserMode
+    })
+
     const importRes = await api.importRows([
       { category1: '政治理论', category2: '时事政治', stem: 'E2E测试题：导入功能验证', options: ['甲', '乙', '丙', '丁'], answer: 'C', analysis: '测试解析' }
     ])
@@ -110,6 +123,22 @@ const TEST_SCRIPT = `
     out.题目图引用 = /local-image:\\/\\//.test(imgQGet.stem)
     out.空选项题目 = JSON.stringify(imgQGet.options)
 
+    // ---- 数据位置迁移：迁到子目录 → 校验数据完整 → 迁回原位置 ----
+    const oldDbPath = await api.getDbPath()
+    const dbBase = oldDbPath.replace(/[\\\\/]comate\.db$/, '')
+    const qTotalBefore = (await api.listQuestions({})).total
+    const wrongBefore = (await api.listWrong({})).length
+    const r1 = await api.moveDb(dbBase + '/migrated')
+    out.迁移1 = JSON.stringify(r1)
+    out.迁移后路径 = await api.getDbPath()
+    out.迁移后题目数 = (await api.listQuestions({})).total
+    out.迁移后错题 = (await api.listWrong({})).length
+    out.迁移后分类 = (await api.categoryTree()).map((n) => n.name).join(',')
+    const r2 = await api.moveDb(dbBase)
+    out.迁移回 = JSON.stringify(r2)
+    out.迁回后路径 = await api.getDbPath()
+    out.数据一致 = (await api.listQuestions({})).total === qTotalBefore && (await api.listWrong({})).length === wrongBefore
+
     return 'PASS ' + JSON.stringify(out, null, 1)
   } catch (err) {
     return 'FAIL: ' + (err && err.stack ? err.stack : String(err))
@@ -128,6 +157,43 @@ const UI_SCRIPT = `
     await wait(500)
     const main = document.querySelector('.app-main')
     results.push(r + ' => ' + (main ? main.innerText.replace(/\\n+/g, ' ').slice(0, 50) : 'NO MAIN'))
+  }
+  // 练多分进度条冒烟：一级分类渲染进度条，展开后子分类也有进度条
+  try {
+    location.hash = '#/practice'
+    await wait(600)
+    const topBars = document.querySelectorAll('.pnode > .pprogress .progress-fill')
+    const firstArrow = document.querySelector('.ptree .parrow')
+    if (firstArrow) {
+      firstArrow.click()
+      await wait(400)
+    }
+    const childBars = document.querySelectorAll('.pchild .progress-fill')
+    results.push('practice-progress => top=' + topBars.length + ' child=' + childBars.length)
+  } catch (err) {
+    results.push('practice-progress => ERR ' + String(err).slice(0, 80))
+  }
+  // 自定义刷题弹窗：分类树默认全部收起（政治理论不应展开）
+  try {
+    location.hash = '#/practice'
+    await wait(500)
+    const composeBtn = [...document.querySelectorAll('button')].find((b) => b.innerText.includes('自定义刷题'))
+    if (composeBtn) {
+      composeBtn.click()
+      await wait(500)
+      const openGroups = document.querySelectorAll('.cc-group .cc-children').length
+      const openArrows = document.querySelectorAll('.cc-arrow.open').length
+      results.push('custom-compose-collapsed => ' + (openGroups === 0 && openArrows === 0 ? 'OK' : 'EXPANDED(groups=' + openGroups + ',arrows=' + openArrows + ')'))
+      const closeBtn = [...document.querySelectorAll('.modal-footer button, .modal-header button')].find(
+        (b) => b.innerText.includes('取消') || b.innerText.includes('关闭')
+      )
+      if (closeBtn) closeBtn.click()
+      await wait(300)
+    } else {
+      results.push('custom-compose-collapsed => NO_BTN')
+    }
+  } catch (err) {
+    results.push('custom-compose-collapsed => ERR ' + String(err).slice(0, 80))
   }
   // 富文本编辑器冒烟：打开「新增题目」，检查 WangEditor 工具栏挂载
   location.hash = '#/questions'
@@ -170,17 +236,76 @@ const UI_SCRIPT = `
     const sessPage = document.querySelector('.session-page')
     const sessMain = document.querySelector('.app-main')
     results.push('session-width => page=' + (sessPage ? Math.round(sessPage.getBoundingClientRect().width) : -1) + ' card=' + (cards[0] ? Math.round(cards[0].getBoundingClientRect().width) : -1) + ' win=' + window.innerWidth + ' appMain=' + (sessMain ? Math.round(sessMain.getBoundingClientRect().width) : -1))
+
+    // 随题笔记内联冒烟：点题卡「笔记」按钮应在卡内展开富文本编辑区，而非弹窗
+    try {
+      const noteBtn0 = cards[0] && cards[0].querySelector('.q-head-right button[title="随题笔记"]')
+      if (noteBtn0) {
+        noteBtn0.click()
+        await wait(600)
+        const inlineNote = cards[0].querySelector('.inline-note')
+        const modalShown = !!document.querySelector('.modal-mask')
+        results.push('card-note-inline => ' + (inlineNote ? 'OK(editor=' + (inlineNote.querySelector('.note-toolbar') ? 'Y' : 'N') + ' modal=' + (modalShown ? 'Y' : 'N') + ')' : 'NO_EDITOR'))
+        noteBtn0.click()
+        await wait(300)
+      } else {
+        results.push('card-note-inline => NO_NOTE_BTN')
+      }
+    } catch (err) {
+      results.push('card-note-inline => ERR ' + String(err).slice(0, 80))
+    }
+
     const btn0 = cards[0] && cards[0].querySelector('.q-head-right button[title="草纸"]')
     if (btn0) {
       btn0.click()
       await wait(800)
       const tools0 = cards[0].querySelector('.paper-tools')
       const overlay0 = cards[0].querySelector('.paper-overlay')
-      const inBounds0 = tools0 && overlay0
-        ? tools0.getBoundingClientRect().right <= overlay0.getBoundingClientRect().right + 1
+      const outside0 = tools0 && overlay0
+        ? tools0.getBoundingClientRect().left >= overlay0.getBoundingClientRect().right - 1
         : false
-      results.push('paper-1st-open => ' + (tools0 ? 'OK(' + tools0.querySelectorAll('.tool-btn').length + 'btns' + (inBounds0 ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+      results.push('paper-1st-open => ' + (tools0 ? 'OK(' + tools0.querySelectorAll('.tool-btn').length + 'btns' + (outside0 ? '' : '/OVERLAPS_CARD') + ')' : 'TOOLBAR_MISSING'))
       results.push('paper-1st-overlay => ' + (overlay0 ? overlay0.getBoundingClientRect().width + 'x' + overlay0.getBoundingClientRect().height : 'NO_OVERLAY'))
+
+      // 整笔擦除：空白处划过后，拖影应自动清除（画布上不残留蓝色高亮像素）
+      try {
+        const eraserBtn = [...tools0.querySelectorAll('.tool-btn')].find((b) => b.title === '橡皮')
+        if (eraserBtn) {
+          eraserBtn.click()
+          await wait(150)
+          const strokeModeBtn = [...document.querySelectorAll('.paper-tools .ts-btn')].find((b) => b.innerText.trim() === '整笔擦除')
+          if (strokeModeBtn) {
+            strokeModeBtn.click()
+            await wait(150)
+            const cv = cards[0].querySelector('.paper-canvas')
+            const rect = cv.getBoundingClientRect()
+            const dpr = window.devicePixelRatio || 1
+            const mk = (type, x, y) => cv.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: rect.left + x, clientY: rect.top + y }))
+            const path = [[24, 24], [70, 34], [120, 44], [170, 54]]
+            mk('mousedown', path[0][0], path[0][1])
+            for (let i = 1; i < path.length; i++) {
+              mk('mousemove', path[i][0], path[i][1])
+              await wait(30)
+            }
+            mk('mouseup', path[path.length - 1][0], path[path.length - 1][1])
+            await wait(250)
+            const cctx = cv.getContext('2d')
+            let blue = 0
+            for (const [x, y] of path) {
+              const d = cctx.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data
+              if (d[3] > 20 && d[2] > d[0] + 40 && d[2] > 120) blue++
+            }
+            results.push('eraser-trail-clear => ' + (blue === 0 ? 'OK' : 'TRAIL_LEFT(' + blue + ')'))
+          } else {
+            results.push('eraser-trail-clear => NO_MODE_BTN')
+          }
+        } else {
+          results.push('eraser-trail-clear => NO_ERASER_BTN')
+        }
+      } catch (err) {
+        results.push('eraser-trail-clear => ERR ' + String(err).slice(0, 80))
+      }
+
       const exitBtn = tools0 && tools0.querySelector('.tool-btn.exit')
       if (exitBtn) exitBtn.click()
       await wait(400)
@@ -195,10 +320,10 @@ const UI_SCRIPT = `
         await wait(800)
         const tools1 = cards[1].querySelector('.paper-tools')
         const overlay1 = cards[1].querySelector('.paper-overlay')
-        const inBounds1 = tools1 && overlay1
-          ? tools1.getBoundingClientRect().right <= overlay1.getBoundingClientRect().right + 1
+        const outside1 = tools1 && overlay1
+          ? tools1.getBoundingClientRect().left >= overlay1.getBoundingClientRect().right - 1
           : false
-        results.push('paper-2nd-open => ' + (tools1 ? 'OK(' + tools1.querySelectorAll('.tool-btn').length + 'btns' + (inBounds1 ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+        results.push('paper-2nd-open => ' + (tools1 ? 'OK(' + tools1.querySelectorAll('.tool-btn').length + 'btns' + (outside1 ? '' : '/OVERLAPS_CARD') + ')' : 'TOOLBAR_MISSING'))
       }
     }
 
@@ -276,10 +401,10 @@ const UI_SCRIPT = `
         rvBtn.click()
         await wait(600)
         const rvTools = rvPage.querySelector('.paper-tools')
-        const rvIn = rvTools
-          ? rvTools.getBoundingClientRect().right <= rvCard.getBoundingClientRect().right + 1
+        const rvOut = rvTools
+          ? rvTools.getBoundingClientRect().left >= rvCard.getBoundingClientRect().right - 1
           : false
-        results.push('review-paper => ' + (rvTools ? 'OK(' + rvTools.querySelectorAll('.tool-btn').length + 'btns' + (rvIn ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+        results.push('review-paper => ' + (rvTools ? 'OK(' + rvTools.querySelectorAll('.tool-btn').length + 'btns' + (rvOut ? '' : '/OVERLAPS_CARD') + ')' : 'TOOLBAR_MISSING'))
         const rvExit = rvTools && rvTools.querySelector('.tool-btn.exit')
         if (rvExit) rvExit.click()
       } else {
@@ -313,10 +438,10 @@ const UI_SCRIPT = `
             wBtn.click()
             await wait(800)
             const wTools = document.querySelector('.paper-tools')
-            const wIn = wTools
-              ? wTools.getBoundingClientRect().right <= wCard.getBoundingClientRect().right + 1
+            const wOut = wTools
+              ? wTools.getBoundingClientRect().left >= wCard.getBoundingClientRect().right - 1
               : false
-            results.push('wrong-review-paper => ' + (wTools ? 'OK(' + wTools.querySelectorAll('.tool-btn').length + 'btns' + (wIn ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+            results.push('wrong-review-paper => ' + (wTools ? 'OK(' + wTools.querySelectorAll('.tool-btn').length + 'btns' + (wOut ? '' : '/OVERLAPS_CARD') + ')' : 'TOOLBAR_MISSING'))
             const wExit = wTools && wTools.querySelector('.tool-btn.exit')
             if (wExit) wExit.click()
             await wait(300)
@@ -413,6 +538,81 @@ const UI_SCRIPT = `
     }
   } catch (err) {
     results.push('paper-test => ERR ' + String(err && err.stack ? err.stack : err).slice(0, 120))
+  }
+
+  // 笔记回看冒烟：点击笔记条目应进入独立回看页（而非弹窗）
+  try {
+    location.hash = '#/notes'
+    await wait(800)
+    const firstNote = document.querySelector('.note-item')
+    if (firstNote) {
+      firstNote.click()
+      await wait(1000)
+      const nPage = document.querySelector('.review-page')
+      const nTitle = nPage ? nPage.querySelector('.rv-title') : null
+      const nCard = nPage ? nPage.querySelector('.q-card') : null
+      const nNote = nPage ? nPage.querySelector('.rv-note') : null
+      results.push('notes-review-page => ' + (nPage ? 'OK title=' + (nTitle ? nTitle.innerText : '') + ' card=' + (nCard ? 1 : 0) + ' note-block=' + (nNote ? 'Y' : 'N') : 'NO_PAGE'))
+      const backBtn = nPage && [...nPage.querySelectorAll('button')].find((b) => b.innerText.includes('笔记'))
+      if (backBtn) backBtn.click()
+      await wait(300)
+    } else {
+      results.push('notes-review-page => NO_NOTE_ITEM')
+    }
+  } catch (err) {
+    results.push('notes-review-page => ERR ' + String(err).slice(0, 80))
+  }
+
+  // 收藏回看冒烟：点击收藏条目应进入独立回看页（而非弹窗）
+  try {
+    location.hash = '#/favorites'
+    await wait(800)
+    const firstFav = document.querySelector('.fav-row')
+    if (firstFav) {
+      const viewBtn = [...firstFav.querySelectorAll('button')].find((b) => b.innerText.trim() === '查看')
+      if (viewBtn) viewBtn.click()
+      else {
+        const stem = firstFav.querySelector('.fav-stem')
+        if (stem) stem.click()
+      }
+      await wait(1000)
+      const fPage = document.querySelector('.review-page')
+      const fTitle = fPage ? fPage.querySelector('.rv-title') : null
+      const fCard = fPage ? fPage.querySelector('.q-card') : null
+      results.push('fav-review-page => ' + (fPage ? 'OK title=' + (fTitle ? fTitle.innerText : '') + ' card=' + (fCard ? 1 : 0) : 'NO_PAGE'))
+      const backBtn = fPage && [...fPage.querySelectorAll('button')].find((b) => b.innerText.includes('收藏'))
+      if (backBtn) backBtn.click()
+      await wait(300)
+    } else {
+      results.push('fav-review-page => NO_FAV_ROW')
+    }
+  } catch (err) {
+    results.push('fav-review-page => ERR ' + String(err).slice(0, 80))
+  }
+
+  // 笔记缩略省略冒烟：富文本块级内容的缩略应单行省略号
+  try {
+    const longNote = '<div>这是一条很长的笔记内容用来验证省略号显示效果是否生效请多写一些字保证超出一行</div><div>第二行的块内容也会被内联化拼到同一行显示</div>'
+    const treeL = await api.categoryTree()
+    const qsL = await api.listQuestions({ categoryId: treeL[0].id, page: 1, pageSize: 1 })
+    const targetQ = qsL.items && qsL.items[0]
+    if (targetQ) {
+      await api.saveNote(targetQ.id, longNote)
+      location.hash = '#/notes'
+      await wait(800)
+      const body = document.querySelector('.note-body')
+      if (body) {
+        const cs = getComputedStyle(body)
+        const oneLine = body.scrollHeight <= body.clientHeight + 1
+        results.push('note-ellipsis => ' + (cs.textOverflow === 'ellipsis' && cs.whiteSpace === 'nowrap' && oneLine ? 'OK' : 'style=' + cs.whiteSpace + ',' + cs.textOverflow + ' oneLine=' + oneLine))
+      } else {
+        results.push('note-ellipsis => NO_BODY')
+      }
+    } else {
+      results.push('note-ellipsis => NO_Q')
+    }
+  } catch (err) {
+    results.push('note-ellipsis => ERR ' + String(err).slice(0, 80))
   }
 
   return results.join('\\n')

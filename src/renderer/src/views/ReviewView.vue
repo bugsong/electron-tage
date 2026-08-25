@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { sanitizeHtml } from '../utils/sanitize'
 import QuestionCard from '../components/QuestionCard.vue'
-import NoteEditorModal from '../components/NoteEditorModal.vue'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
@@ -13,21 +12,33 @@ const toast = useToastStore()
 
 const session = ref(null)
 const wrongItems = ref([])
+const noteItems = ref([])
+const favItems = ref([])
 const loading = ref(true)
 const index = ref(0)
 const favorites = ref(new Set())
-const noteFor = ref(null)
 
 const isWrongMode = computed(() => route.query.mode === 'wrong')
-const questions = computed(() => (isWrongMode.value ? wrongItems.value : session.value ? session.value.questions : []))
+const isNotesMode = computed(() => route.query.mode === 'notes')
+const isFavMode = computed(() => route.query.mode === 'favorites')
+const questions = computed(() => {
+  if (isWrongMode.value) return wrongItems.value
+  if (isNotesMode.value) return noteItems.value
+  if (isFavMode.value) return favItems.value
+  return session.value ? session.value.questions : []
+})
 const total = computed(() => questions.value.length)
 const current = computed(() => questions.value[index.value])
 
 const myAnswer = computed(() =>
-  isWrongMode.value || !session.value ? null : session.value.answers[index.value]
+  isWrongMode.value || isNotesMode.value || isFavMode.value || !session.value
+    ? null
+    : session.value.answers[index.value]
 )
 const myCorrect = computed(() =>
-  isWrongMode.value || !session.value ? null : session.value.result[index.value]
+  isWrongMode.value || isNotesMode.value || isFavMode.value || !session.value
+    ? null
+    : session.value.result[index.value]
 )
 
 const safeAnalysis = computed(() => (current.value ? sanitizeHtml(current.value.analysis || '') : ''))
@@ -46,6 +57,62 @@ async function load() {
         categoryName: w.categoryName
       }))
       index.value = Math.min(Math.max(Number(route.query.index) || 0, 0), Math.max(wrongItems.value.length - 1, 0))
+      try {
+        const favs = await api.listFavorites()
+        favorites.value = new Set(favs.map((f) => f.questionId))
+      } catch {}
+    } catch (err) {
+      toast.error('加载失败：' + (err.message || err))
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+  if (isNotesMode.value) {
+    try {
+      const list = await api.listNotes({})
+      noteItems.value = list.map((n) => ({
+        id: n.questionId,
+        questionId: n.questionId,
+        stem: n.stem,
+        options: n.options,
+        answer: n.answer,
+        analysis: n.analysis,
+        categoryName: n.categoryName
+      }))
+      // 优先按 questionId 定位（来自笔记列表点击，带过滤也能对位），否则按 index
+      const qid = Number(route.query.questionId)
+      const pos = qid ? noteItems.value.findIndex((n) => n.questionId === qid) : -1
+      const start = pos >= 0 ? pos : Number(route.query.index) || 0
+      index.value = Math.min(Math.max(start, 0), Math.max(noteItems.value.length - 1, 0))
+      try {
+        const favs = await api.listFavorites()
+        favorites.value = new Set(favs.map((f) => f.questionId))
+      } catch {}
+    } catch (err) {
+      toast.error('加载失败：' + (err.message || err))
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+  if (isFavMode.value) {
+    try {
+      const list = await api.listFavorites({})
+      favItems.value = list.map((f) => ({
+        id: f.questionId,
+        questionId: f.questionId,
+        stem: f.stem,
+        options: f.options,
+        answer: f.answer,
+        analysis: f.analysis,
+        categoryName: f.categoryName
+      }))
+      // 优先按 questionId 定位（来自收藏列表点击，带过滤也能对位），否则按 index
+      const qid = Number(route.query.questionId)
+      const pos = qid ? favItems.value.findIndex((n) => n.questionId === qid) : -1
+      const start = pos >= 0 ? pos : Number(route.query.index) || 0
+      index.value = Math.min(Math.max(start, 0), Math.max(favItems.value.length - 1, 0))
       try {
         const favs = await api.listFavorites()
         favorites.value = new Set(favs.map((f) => f.questionId))
@@ -106,20 +173,28 @@ async function toggleFavorite(q) {
 <template>
   <div class="review-page">
     <div class="rv-topbar">
-      <button v-if="isWrongMode" class="btn btn-text" title="返回错题本" @click="router.push('/wrong')">
+      <button v-if="isNotesMode" class="btn btn-text" title="返回笔记" @click="router.push('/notes')">
+        ← 笔记
+      </button>
+      <button v-else-if="isFavMode" class="btn btn-text" title="返回收藏" @click="router.push('/favorites')">
+        ← 收藏
+      </button>
+      <button v-else-if="isWrongMode" class="btn btn-text" title="返回错题本" @click="router.push('/wrong')">
         ← 错题本
       </button>
       <button v-else class="btn btn-text" title="返回答题卡" @click="router.push({ path: '/practice/result', query: { sessionId: route.query.sessionId } })">
         ← 答题卡
       </button>
-      <h1 class="rv-title">{{ isWrongMode ? '错题复盘' : '题目回看' }}</h1>
+      <h1 class="rv-title">{{ isNotesMode ? '笔记回看' : isFavMode ? '收藏回看' : isWrongMode ? '错题复盘' : '题目回看' }}</h1>
       <span class="rv-count">{{ index + 1 }}/{{ total }}</span>
       <button class="btn" :disabled="index === 0" @click="go(index - 1)">上一题</button>
       <button class="btn btn-primary" :disabled="index >= total - 1" @click="go(index + 1)">下一题</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
-    <div v-else-if="!questions.length" class="empty">{{ isWrongMode ? '太棒了，当前没有错题' : '没有可查看的题目' }}</div>
+    <div v-else-if="!questions.length" class="empty">
+      {{ isNotesMode ? '还没有笔记，做题时在题目卡片右上角点「笔记」写下心得' : isFavMode ? '还没有收藏题目，做题时点卡片上的星标即可收藏' : isWrongMode ? '太棒了，当前没有错题' : '没有可查看的题目' }}
+    </div>
 
     <template v-else>
       <QuestionCard
@@ -128,11 +203,10 @@ async function toggleFavorite(q) {
         :index="index + 1"
         :answer="myAnswer"
         :is-favorite="favorites.has(current.id)"
-        :session-type="isWrongMode ? 'wrong_review' : session.type"
+        :session-type="isWrongMode || isNotesMode || isFavMode ? 'wrong_review' : session.type"
         :show-result="true"
         :is-correct="myCorrect"
         @favorite="toggleFavorite(current)"
-        @note="noteFor = current"
       />
 
       <div v-if="safeAnalysis" class="card rv-analysis">
@@ -145,8 +219,6 @@ async function toggleFavorite(q) {
         <button class="btn btn-primary" :disabled="index >= total - 1" @click="go(index + 1)">下一题 →</button>
       </div>
     </template>
-
-    <NoteEditorModal v-if="noteFor" :question-id="noteFor.id" @close="noteFor = null" />
   </div>
 </template>
 

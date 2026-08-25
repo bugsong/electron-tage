@@ -4,7 +4,6 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api'
 import { fmtDuration } from '../utils/format'
 import QuestionCard from '../components/QuestionCard.vue'
-import NoteEditorModal from '../components/NoteEditorModal.vue'
 import QuickSettingsModal from '../components/QuickSettingsModal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useToastStore } from '../stores/toast'
@@ -20,7 +19,6 @@ const favorites = ref(new Set())
 const elapsedMs = ref(0)
 const loading = ref(true)
 
-const noteFor = ref(null)
 const settingsOpen = ref(false)
 const confirmSubmit = ref(false)
 const confirmAbandon = ref(false)
@@ -226,12 +224,9 @@ function isRemoved(q) {
         :wrong-removed="isRemoved(q)"
         @select="onSelect(i, $event)"
         @favorite="toggleFavorite(q)"
-        @note="noteFor = q"
         @remove-wrong="askRemoveWrong(q)"
       />
     </div>
-
-    <NoteEditorModal v-if="noteFor" :question-id="noteFor.id" @close="noteFor = null" />
 
     <QuickSettingsModal
       v-if="settingsOpen"

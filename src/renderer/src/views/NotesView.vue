@@ -1,15 +1,15 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtTime, plainText } from '../utils/format'
-import QuestionDetailModal from '../components/QuestionDetailModal.vue'
 import { useToastStore } from '../stores/toast'
 
+const router = useRouter()
 const toast = useToastStore()
 
 const items = ref([])
 const loading = ref(true)
-const detailFor = ref(null)
 const keyword = ref('')
 const categoryId = ref('')
 const catOptions = ref([])
@@ -51,6 +51,13 @@ function search() {
 function preview(content) {
   return plainText(content).slice(0, 90) || '（空笔记）'
 }
+
+/** 点击笔记条目进入独立回看页（与错题「复盘」一致），带 questionId 以兼容过滤后的列表 */
+function openReview(i) {
+  const n = items.value[i]
+  if (!n) return
+  router.push({ path: '/practice/review', query: { mode: 'notes', questionId: n.questionId } })
+}
 </script>
 
 <template>
@@ -83,7 +90,7 @@ function preview(content) {
     </div>
 
     <div v-else class="card">
-      <div v-for="n in items" :key="n.questionId" class="note-item" @click="detailFor = n">
+      <div v-for="(n, i) in items" :key="n.questionId" class="note-item" @click="openReview(i)">
         <div class="note-body" v-html="n.content"></div>
         <div class="note-meta">
           <span class="tag tag-gray">{{ n.categoryName }}</span>
@@ -92,12 +99,6 @@ function preview(content) {
         </div>
       </div>
     </div>
-
-    <QuestionDetailModal
-      v-if="detailFor"
-      :question="{ ...detailFor, id: detailFor.questionId }"
-      @close="detailFor = null"
-    />
   </div>
 </template>
 
@@ -134,6 +135,19 @@ function preview(content) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 富文本里的块级元素一律内联化、换行隐藏，保证缩略预览单行省略 */
+.note-body :deep(p),
+.note-body :deep(div),
+.note-body :deep(ul),
+.note-body :deep(ol),
+.note-body :deep(li),
+.note-body :deep(pre) {
+  display: inline;
+  margin: 0;
+}
+.note-body :deep(br) {
+  display: none;
 }
 .note-body :deep(h2) {
   font-size: 1rem;

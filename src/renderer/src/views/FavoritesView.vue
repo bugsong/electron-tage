@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtTime, plainText } from '../utils/format'
-import QuestionDetailModal from '../components/QuestionDetailModal.vue'
 import { useToastStore } from '../stores/toast'
 
 const router = useRouter()
@@ -11,7 +10,6 @@ const toast = useToastStore()
 
 const items = ref([])
 const loading = ref(true)
-const detailFor = ref(null)
 const keyword = ref('')
 const categoryId = ref('')
 const catOptions = ref([])
@@ -68,6 +66,13 @@ async function reviewFavorites() {
     toast.error(err.message || '暂无收藏题目')
   }
 }
+
+/** 点击条目进入独立回看页（与笔记回看一致），带 questionId 以兼容过滤后的列表 */
+function openReview(i) {
+  const q = items.value[i]
+  if (!q) return
+  router.push({ path: '/practice/review', query: { mode: 'favorites', questionId: q.questionId } })
+}
 </script>
 
 <template>
@@ -100,11 +105,11 @@ async function reviewFavorites() {
     </div>
 
     <div v-else class="card">
-      <div v-for="q in items" :key="q.questionId" class="list-row fav-row">
+      <div v-for="(q, i) in items" :key="q.questionId" class="list-row fav-row">
         <span class="tag tag-gray">{{ q.categoryName }}</span>
-        <span class="fav-stem" @click="detailFor = q">{{ plainText(q.stem) }}</span>
+        <span class="fav-stem" @click="openReview(i)">{{ plainText(q.stem) }}</span>
         <span class="fav-meta">{{ fmtTime(q.createdAt) }}</span>
-        <button class="btn btn-text" @click="detailFor = q">查看</button>
+        <button class="btn btn-text" @click="openReview(i)">查看</button>
         <button class="icon-btn" title="取消收藏" @click="unstar(q)">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
             <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" />
@@ -112,12 +117,6 @@ async function reviewFavorites() {
         </button>
       </div>
     </div>
-
-    <QuestionDetailModal
-      v-if="detailFor"
-      :question="{ ...detailFor, id: detailFor.questionId }"
-      @close="detailFor = null"
-    />
   </div>
 </template>
 

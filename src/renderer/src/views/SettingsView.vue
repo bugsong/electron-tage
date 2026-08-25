@@ -3,10 +3,14 @@ import { ref, onMounted } from 'vue'
 import { api } from '../api'
 import { useSettingsStore, FONT_SIZES } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const settings = useSettingsStore()
 const toast = useToastStore()
 const dbPath = ref('')
+const moving = ref(false)
+// 待用户确认的迁移 { dir, message }
+const pendingMove = ref(null)
 
 onMounted(async () => {
   try {
@@ -22,6 +26,56 @@ async function copyPath() {
     toast.success('路径已复制')
   } catch {
     toast.error('复制失败')
+  }
+}
+
+async function chooseDbDir() {
+  if (moving.value) return
+  let dir
+  try {
+    dir = await api.pickDbDir()
+  } catch {
+    toast.error('选择文件夹失败')
+    return
+  }
+  if (!dir) return
+  try {
+    const info = await api.moveDb(dir)
+    if (info.status === 'need_confirm') {
+      pendingMove.value = { dir, message: info.message }
+      return
+    }
+    applyMoveResult(info)
+  } catch (err) {
+    toast.error(err.message || '迁移数据库失败')
+  }
+}
+
+async function confirmMove() {
+  const pending = pendingMove.value
+  pendingMove.value = null
+  if (!pending) return
+  moving.value = true
+  try {
+    const info = await api.moveDb(pending.dir, { force: true })
+    applyMoveResult(info)
+  } catch (err) {
+    toast.error(err.message || '迁移数据库失败')
+  } finally {
+    moving.value = false
+  }
+}
+
+function applyMoveResult(info) {
+  if (info && info.status === 'ok') {
+    dbPath.value = info.newPath
+    const msg =
+      info.action === 'migrate'
+        ? '已迁移数据库到新位置'
+        : info.action === 'use'
+          ? '已打开该位置的数据库'
+          : '已在新位置初始化数据库'
+    toast.success(msg)
   }
 }
 </script>
@@ -74,8 +128,21 @@ async function copyPath() {
       <div class="st-path">
         <span class="st-path-text">{{ dbPath }}</span>
         <button class="btn" @click="copyPath">复制路径</button>
+        <button class="btn" @click="chooseDbDir" :disabled="moving">
+          {{ moving ? '迁移中…' : '更改路径' }}
+        </button>
       </div>
+      <div class="st-desc st-desc-note">更改位置后，已有数据会自动迁移过去；若新位置还没有数据库，则会自动初始化</div>
     </div>
+
+    <ConfirmDialog
+      v-if="pendingMove"
+      title="更改数据位置"
+      :message="pendingMove.message"
+      ok-text="确认"
+      @confirm="confirmMove"
+      @close="pendingMove = null"
+    />
 
     <div class="st-about">爱硬刷 · 仅本机使用 · 数据不出本机</div>
   </div>
@@ -137,6 +204,15 @@ async function copyPath() {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+}
+.st-path .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.st-desc-note {
+  margin: 0.6rem 0 0;
+  color: var(--text-2);
+  font-size: 0.8rem;
 }
 .st-path-text {
   flex: 1;

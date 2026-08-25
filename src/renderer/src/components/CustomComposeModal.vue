@@ -18,8 +18,7 @@ const COUNT_OPTIONS = [10, 20, 30, 50]
 async function load() {
   try {
     tree.value = await api.categoryTree()
-    // 默认展开第一个一级分类（政治理论）
-    if (tree.value.length) expanded.value.add(tree.value[0].id)
+    // 默认全部收起，由用户自行展开
   } catch (err) {
     toast.error('加载分类失败：' + (err.message || err))
   }

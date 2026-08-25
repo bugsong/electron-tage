@@ -12,8 +12,108 @@ function getDb() {
   return db
 }
 
+/** 数据目录配置文件（存放在 userData，userData 本身永不迁移） */
+function dataDirConfigFile() {
+  return path.join(app.getPath('userData'), 'data-dir.json')
+}
+
+/** 读取用户配置的数据目录；未配置过则回退到默认 userData */
+function configuredDataDir() {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(dataDirConfigFile(), 'utf8'))
+    if (cfg && typeof cfg.dir === 'string' && cfg.dir) return cfg.dir
+  } catch {
+    /* 无配置文件或读取失败时使用默认位置 */
+  }
+  return app.getPath('userData')
+}
+
 function dbPath() {
-  return path.join(app.getPath('userData'), 'comate.db')
+  return path.join(configuredDataDir(), 'comate.db')
+}
+
+/**
+ * 把数据库迁移到新目录（或在新目录初始化）：
+ * - 原位置已有数据库 → 在线备份迁移到新位置（WAL 安全）
+ * - 原位置没有数据库 → 直接在新位置初始化
+ * - 目标已存在数据库文件且未强制 → 返回 need_confirm，由前端确认后带 force 重试
+ * 成功后持久化配置并重新打开新库；失败则回滚配置、恢复原库。
+ * @param {string} newDir 目标文件夹（不存在会自动创建）
+ * @param {{force?: boolean}} opts force=true 时允许覆盖目标已有数据库
+ */
+async function moveDb(newDir, opts = {}) {
+  if (!db) throw new Error('数据库尚未初始化')
+  if (!newDir || typeof newDir !== 'string' || !newDir.trim()) throw new Error('请选择有效的文件夹')
+
+  const targetDir = path.resolve(newDir.trim())
+  const current = path.resolve(dbPath())
+  const target = path.join(targetDir, 'comate.db')
+  // Windows 路径不区分大小写，统一小写比较
+  const samePath =
+    process.platform === 'win32'
+      ? current.toLowerCase() === target.toLowerCase()
+      : current === target
+  if (samePath) throw new Error('新位置与当前数据库位置相同')
+
+  const sourceExists = fs.existsSync(current)
+  const targetExists = fs.existsSync(target)
+
+  // 目标已存在数据库文件：非强制时先让用户确认，避免误覆盖
+  if (targetExists && !opts.force) {
+    return {
+      status: 'need_confirm',
+      message: sourceExists
+        ? '目标文件夹已存在 comate.db 数据库文件，迁移将覆盖该文件。\n建议选择空文件夹，确认后将继续。'
+        : '目标文件夹已存在 comate.db 数据库文件，确认后将打开并使用该数据库。',
+      currentPath: current,
+      newPath: target,
+      sourceExists,
+      targetExists
+    }
+  }
+
+  const oldDir = configuredDataDir()
+  fs.mkdirSync(targetDir, { recursive: true })
+
+  // 原位置有数据库：在线备份到新位置（better-sqlite3 backup 兼容 WAL，生成完整主库文件）
+  if (sourceExists) {
+    // force 覆盖时先移除旧目标，避免备份到非 SQLite 文件（或旧库）时报错
+    if (targetExists) {
+      try { fs.unlinkSync(target) } catch {}
+    }
+    await db.backup(target)
+  }
+
+  // 持久化新位置
+  fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: targetDir }))
+
+  // 关闭旧连接，在新位置重新打开
+  try {
+    db.close()
+    db = null
+    initDb()
+  } catch (err) {
+    // 失败回滚：恢复原配置并重新打开原库，保证数据可用
+    try { fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: oldDir })) } catch {}
+    try { if (db) db.close() } catch {}
+    db = null
+    initDb()
+    throw new Error('迁移失败，已恢复原数据库：' + ((err && err.message) || err))
+  }
+
+  // 迁移成功后清理原位置文件（含 WAL/SHM 残留）
+  if (sourceExists) {
+    for (const f of ['comate.db', 'comate.db-wal', 'comate.db-shm']) {
+      try { fs.unlinkSync(path.join(oldDir, f)) } catch {}
+    }
+  }
+
+  return {
+    status: 'ok',
+    action: sourceExists ? 'migrate' : targetExists ? 'use' : 'init',
+    currentPath: current,
+    newPath: target
+  }
 }
 
 function initDb() {
@@ -116,7 +216,7 @@ function createSchema() {
 
 /**
  * 分类结构（一级 + 二级）。
- * 一级分类在专项练习界面展开时，前端会在最前面渲染一个虚拟「全部」，
+ * 一级分类在练多分界面展开时，前端会在最前面渲染一个虚拟「全部」，
  * 因此这里不存储「全部」，只存储真实分类。
  */
 const CATEGORY_SCHEMA = [
@@ -352,4 +452,4 @@ function seedDemoQuestions() {
     '1000 × (1+8%) = 1080 亿元。')
 }
 
-module.exports = { initDb, getDb, dbPath }
+module.exports = { initDb, getDb, dbPath, configuredDataDir, moveDb }

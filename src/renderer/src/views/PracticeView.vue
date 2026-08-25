@@ -18,10 +18,9 @@ async function load() {
   loading.value = true
   try {
     tree.value = await api.categoryTree()
-    // 默认展开第一个一级分类；支持从首页带 ?expand= 展开指定分类
+    // 默认全部收起；支持从首页带 ?expand= 展开指定分类
     const expandId = Number(route.query.expand)
     if (expandId) expanded.value.add(expandId)
-    else if (tree.value.length) expanded.value.add(tree.value[0].id)
   } catch (err) {
     toast.error('加载分类失败：' + (err.message || err))
   } finally {
@@ -37,11 +36,17 @@ function toggleExpand(id) {
   expanded.value = s
 }
 
+/** 已做/未做进度百分比 */
+function barPercent(node) {
+  if (!node || !node.total) return 0
+  return Math.round((node.done / node.total) * 100)
+}
+
 async function goPractice(categoryId, name) {
   try {
     const r = await api.startPractice({
       type: 'special',
-      title: `专项智能练习（${name}）`,
+      title: `练多分（${name}）`,
       categoryIds: [categoryId],
       count: 20
     })
@@ -75,7 +80,7 @@ function visibleChildren(node) {
 <template>
   <div class="page">
     <div class="page-header">
-      <span class="page-title-tag">专项练习</span>
+      <span class="page-title-tag">练多分</span>
       <button class="btn btn-text" @click="composeOpen = true">自定义刷题</button>
     </div>
 
@@ -94,18 +99,30 @@ function visibleChildren(node) {
           <span class="pcount">{{ node.done }}/{{ node.total }}</span>
           <button class="btn btn-text pgo" @click="goPractice(node.id, node.name)">去练习 &gt;</button>
         </div>
+        <div class="pprogress">
+          <div class="progress">
+            <div class="progress-fill" :style="{ width: barPercent(node) + '%' }"></div>
+          </div>
+        </div>
 
         <div v-if="expanded.has(node.id)" class="pchildren">
           <template v-if="visibleChildren(node).length">
-            <div v-for="child in visibleChildren(node)" :key="child.id" class="prow child">
-              <span class="pname child-name">{{ child.name }}</span>
-              <span class="pcount">{{ child.done }}/{{ child.total }}</span>
-              <button
-                class="btn btn-text pgo"
-                @click="goPractice(child.virtual ? child.parentId : child.id, child.virtual ? child.parentName : child.name)"
-              >
-                去练习 &gt;
-              </button>
+            <div v-for="child in visibleChildren(node)" :key="child.id" class="pchild">
+              <div class="prow child">
+                <span class="pname child-name">{{ child.name }}</span>
+                <span class="pcount">{{ child.done }}/{{ child.total }}</span>
+                <button
+                  class="btn btn-text pgo"
+                  @click="goPractice(child.virtual ? child.parentId : child.id, child.virtual ? child.parentName : child.name)"
+                >
+                  去练习 &gt;
+                </button>
+              </div>
+              <div class="pprogress">
+                <div class="progress">
+                  <div class="progress-fill" :style="{ width: barPercent(child) + '%' }"></div>
+                </div>
+              </div>
             </div>
           </template>
           <div v-else class="pempty">暂无子分类</div>
@@ -131,9 +148,22 @@ function visibleChildren(node) {
   padding: 0.8rem 1.1rem;
 }
 .prow.child {
-  padding-left: 3.2rem;
+  padding: 0.7rem 1.1rem 0.3rem 3.2rem;
+}
+/* 子集块：行 + 进度条整体一个浅色块 */
+.pchild {
   background: var(--card-hover);
   border-top: 1px solid var(--border);
+}
+/* 进度条（已做/未做） */
+.pprogress {
+  padding: 0.15rem 1.1rem 0.85rem 2.7rem;
+}
+.pchild .pprogress {
+  padding: 0.1rem 1.1rem 0.7rem 3.2rem;
+}
+.pchild .progress {
+  height: 0.4rem;
 }
 .parrow {
   width: 0;

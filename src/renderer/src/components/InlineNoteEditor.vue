@@ -1,15 +1,12 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { api } from '../api'
-import Modal from './Modal.vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import { useToastStore } from '../stores/toast'
 
 const props = defineProps({
-  questionId: { type: [Number, String], required: true },
-  title: { type: String, default: '随题笔记' }
+  questionId: { type: [Number, String], required: true }
 })
-const emit = defineEmits(['close'])
 const toast = useToastStore()
 
 const editorRef = ref(null)
@@ -64,39 +61,37 @@ onBeforeUnmount(() => clearTimeout(debounceTimer))
 </script>
 
 <template>
-  <Modal :title="title" width="44rem" @close="emit('close')">
-    <div class="note-editor">
-      <div class="note-toolbar">
-        <button class="nb" title="加粗" @click="exec('bold')"><b>B</b></button>
-        <button class="nb" title="斜体" @click="exec('italic')"><i>I</i></button>
-        <button class="nb" title="下划线" @click="exec('underline')"><u>U</u></button>
-        <button class="nb" title="删除线" @click="exec('strikeThrough')"><s>S</s></button>
-        <span class="sep"></span>
-        <button class="nb" title="标题" @click="exec('formatBlock', 'h2')">H2</button>
-        <button class="nb" title="无序列表" @click="exec('insertUnorderedList')">• 列表</button>
-        <button class="nb" title="有序列表" @click="exec('insertOrderedList')">1. 列表</button>
-        <button class="nb" title="引用" @click="exec('formatBlock', 'blockquote')">❝ 引用</button>
-        <span class="sep"></span>
-        <button class="nb" title="清除格式" @click="exec('removeFormat')">清除格式</button>
-      </div>
-      <div
-        ref="editorRef"
-        class="note-content"
-        contenteditable="true"
-        data-placeholder="在这里写下这道题的笔记…"
-        @input="onInput"
-        @paste="onPaste"
-      ></div>
-      <div class="note-foot">
-        <span v-if="savedAt" class="note-saved">{{ savedAt }}</span>
-        <span class="note-tip">修改后自动保存</span>
-      </div>
+  <div class="inline-note">
+    <div class="note-toolbar">
+      <button class="nb" title="加粗" @click="exec('bold')"><b>B</b></button>
+      <button class="nb" title="斜体" @click="exec('italic')"><i>I</i></button>
+      <button class="nb" title="下划线" @click="exec('underline')"><u>U</u></button>
+      <button class="nb" title="删除线" @click="exec('strikeThrough')"><s>S</s></button>
+      <span class="sep"></span>
+      <button class="nb" title="标题" @click="exec('formatBlock', 'h2')">H2</button>
+      <button class="nb" title="无序列表" @click="exec('insertUnorderedList')">• 列表</button>
+      <button class="nb" title="有序列表" @click="exec('insertOrderedList')">1. 列表</button>
+      <button class="nb" title="引用" @click="exec('formatBlock', 'blockquote')">❝ 引用</button>
+      <span class="sep"></span>
+      <button class="nb" title="清除格式" @click="exec('removeFormat')">清除格式</button>
     </div>
-  </Modal>
+    <div
+      ref="editorRef"
+      class="note-content"
+      contenteditable="true"
+      data-placeholder="在这里写下这道题的笔记…"
+      @input="onInput"
+      @paste="onPaste"
+    ></div>
+    <div class="note-foot">
+      <span v-if="savedAt" class="note-saved">{{ savedAt }}</span>
+      <span class="note-tip">修改后自动保存</span>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.note-editor {
+.inline-note {
   display: flex;
   flex-direction: column;
 }
@@ -104,7 +99,7 @@ onBeforeUnmount(() => clearTimeout(debounceTimer))
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding-bottom: 0.6rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -131,10 +126,10 @@ onBeforeUnmount(() => clearTimeout(debounceTimer))
   margin: 0 0.3rem;
 }
 .note-content {
-  min-height: 300px;
-  max-height: 46vh;
+  min-height: 140px;
+  max-height: 40vh;
   overflow-y: auto;
-  padding: 0.9rem 0.2rem;
+  padding: 0.7rem 0.2rem;
   outline: none;
   line-height: 1.9;
   user-select: text;
@@ -161,7 +156,7 @@ onBeforeUnmount(() => clearTimeout(debounceTimer))
   justify-content: flex-end;
   align-items: center;
   gap: 0.8rem;
-  padding-top: 0.5rem;
+  padding-top: 0.4rem;
   border-top: 1px solid var(--border);
   font-size: 0.8rem;
 }

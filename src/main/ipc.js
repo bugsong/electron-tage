@@ -1,5 +1,5 @@
 const { ipcMain, dialog } = require('electron')
-const { getDb, dbPath } = require('./db')
+const { getDb, dbPath, configuredDataDir, moveDb } = require('./db')
 const { parseExcel } = require('./excel')
 const { sanitizeHtml } = require('../shared/sanitize')
 const { saveImage, getImage } = require('./images')
@@ -485,7 +485,7 @@ function registerPracticeHandlers() {
   ipcMain.handle('practice:getSession', (e, id) => getSession(id))
 
   ipcMain.handle('practice:start', (e, payload = {}) => {
-    const { type = 'special', title = '专项练习', categoryIds = [], count = 20, wrongCategoryId = null } = payload
+    const { type = 'special', title = '练多分', categoryIds = [], count = 20, wrongCategoryId = null } = payload
     const db = getDb()
     let ids = []
     if (type === 'wrong_review') {
@@ -633,10 +633,31 @@ function registerStatsHandlers() {
 function registerSettingsHandlers() {
   ipcMain.handle('app:dbPath', () => dbPath())
 
+  // 选择数据库存储文件夹
+  ipcMain.handle('dialog:pickDbDir', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '选择数据库存储文件夹',
+      defaultPath: configuredDataDir(),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return r.canceled ? null : r.filePaths[0]
+  })
+
+  // 迁移/初始化数据库到新位置
+  ipcMain.handle('app:moveDb', (e, dir, opts) => moveDb(dir, opts))
+
   ipcMain.handle('settings:getAll', () => {
     const rows = getDb().prepare('SELECT key, value FROM settings').all()
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]))
-    return { fontSize: map.fontSize || 'normal', theme: map.theme || 'light' }
+    return {
+      fontSize: map.fontSize || 'normal',
+      theme: map.theme || 'light',
+      // 草纸画笔 / 橡皮参数
+      penSize: map.penSize || 'normal',
+      penColor: map.penColor || '#20242c',
+      eraserSize: map.eraserSize || 'normal',
+      eraserMode: map.eraserMode || 'pixel'
+    }
   })
 
   ipcMain.handle('settings:set', (e, key, value) => {

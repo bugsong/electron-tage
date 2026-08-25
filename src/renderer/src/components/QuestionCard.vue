@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import PaperCanvas from './PaperCanvas.vue'
+import InlineNoteEditor from './InlineNoteEditor.vue'
 
 const props = defineProps({
   question: { type: Object, required: true },
@@ -14,10 +15,11 @@ const props = defineProps({
   wrongRemoved: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['select', 'favorite', 'note', 'remove-wrong'])
+const emit = defineEmits(['select', 'favorite', 'remove-wrong'])
 
 const LETTERS = ['A', 'B', 'C', 'D']
 const paperOpen = ref(false)
+const noteOpen = ref(false)
 
 const safeStem = computed(() => sanitizeHtml(props.question.stem))
 // 选项未填写时也保留 A/B/C/D 四个槽，保证可作答与字母对应
@@ -68,7 +70,7 @@ function togglePaper() {
             <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
           </svg>
         </button>
-        <button class="icon-btn" title="随题笔记" @click="emit('note')">
+        <button class="icon-btn" :class="{ active: noteOpen }" title="随题笔记" @click="noteOpen = !noteOpen">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <path d="M14 2v6h6" />
@@ -115,6 +117,11 @@ function togglePaper() {
         <span v-else-if="showResult && answer === opt.letter && answer !== question.answer" class="q-mark wrong">✕</span>
       </div>
       <div v-if="!safeOptions.length" class="q-options-empty">选项见题干</div>
+    </div>
+
+    <!-- 随题笔记：按钮控制下方富文本笔记区域的显隐 -->
+    <div v-if="noteOpen" class="q-note">
+      <InlineNoteEditor :question-id="question.id" />
     </div>
   </div>
 </template>
@@ -239,6 +246,14 @@ function togglePaper() {
   padding: 0.6rem 0.2rem;
   color: var(--text-2);
   font-size: 0.88rem;
+}
+/* 随题笔记内联区域 */
+.q-note {
+  margin-top: 0.9rem;
+  padding: 0.8rem 0.9rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-hover);
 }
 .q-mark {
   color: var(--success);

@@ -108,7 +108,7 @@ function barPercent(node) {
 
       <div class="home-section">
         <div class="home-section-head">
-          <h2>专项练习进度</h2>
+          <h2>练多分进度</h2>
           <button class="btn btn-text" @click="router.push('/practice')">查看全部 ›</button>
         </div>
         <div class="card home-list">

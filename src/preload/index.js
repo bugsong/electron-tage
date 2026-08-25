@@ -49,7 +49,11 @@ const api = {
   getStats: () => ipcRenderer.invoke('stats:home'),
   getSettings: () => ipcRenderer.invoke('settings:getAll'),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
-  getDbPath: () => ipcRenderer.invoke('app:dbPath')
+  getDbPath: () => ipcRenderer.invoke('app:dbPath'),
+
+  // 数据位置（数据库目录迁移/初始化）
+  pickDbDir: () => ipcRenderer.invoke('dialog:pickDbDir'),
+  moveDb: (dir, opts) => ipcRenderer.invoke('app:moveDb', dir, opts)
 }
 
 contextBridge.exposeInMainWorld('api', api)

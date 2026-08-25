@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '../api'
 import Modal from './Modal.vue'
 import PaperCanvas from './PaperCanvas.vue'
-import NoteEditorModal from './NoteEditorModal.vue'
+import InlineNoteEditor from './InlineNoteEditor.vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import { plainText } from '../utils/format'
 
@@ -40,6 +40,11 @@ async function loadNote() {
 }
 
 onMounted(loadNote)
+
+// 关闭内联笔记编辑区时刷新只读展示
+watch(noteOpen, (v) => {
+  if (!v) loadNote()
+})
 
 function optionClass(letter) {
   const cls = []
@@ -82,11 +87,13 @@ function optionClass(letter) {
         <div class="d-analysis-title">我的笔记</div>
         <div class="d-note-body" v-html="noteContent"></div>
       </div>
+      <!-- 内联笔记编辑区：由「笔记」按钮控制显隐 -->
+      <InlineNoteEditor v-if="noteOpen" :question-id="question.id" />
     </div>
 
     <template #footer>
       <button class="btn" @click="paperOpen = true">草纸</button>
-      <button class="btn" @click="noteOpen = true">笔记</button>
+      <button class="btn" :class="{ active: noteOpen }" @click="noteOpen = !noteOpen">笔记</button>
       <button v-if="showRemove" class="btn btn-danger" @click="emit('remove')">移出错题本</button>
       <button class="btn btn-primary" @click="emit('close')">关闭</button>
     </template>
@@ -97,11 +104,6 @@ function optionClass(letter) {
       :question-id="question.id"
       :question-no="question.no || ''"
       @close="paperOpen = false"
-    />
-    <NoteEditorModal
-      v-if="noteOpen"
-      :question-id="question.id"
-      @close="noteOpen = false; loadNote()"
     />
   </Modal>
 </template>
