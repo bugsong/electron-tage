@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { api } from '../api'
 import { useToastStore } from '../stores/toast'
+import { sanitizeHtml } from '../utils/sanitize'
 
 const toast = useToastStore()
 
@@ -26,7 +27,10 @@ let unsubscribeProgress = null
 const versionText = computed(() => (currentVersion.value ? `v${currentVersion.value}` : ''))
 
 const isUpdateAvailable = computed(
-  () => status.value === 'update-available' || status.value === 'ready-to-install'
+  () =>
+    status.value === 'update-available' ||
+    status.value === 'downloading' ||
+    status.value === 'ready-to-install'
 )
 
 const checkedText = computed(() => {
@@ -71,6 +75,8 @@ const progressText = computed(() => {
   return `${mb(p.transferred)} MB / ${mb(p.total)} MB${speed ? ' · ' + speed : ''}`
 })
 
+const safeReleaseNotes = computed(() => sanitizeHtml(releaseNotes.value))
+
 function applyState(s) {
   if (!s) return
   status.value = s.status || 'idle'
@@ -84,7 +90,7 @@ function applyState(s) {
   checking.value = status.value === 'checking'
   downloading.value = status.value === 'downloading'
   installNotice.value = status.value === 'ready-to-install'
-  if (status.value !== 'update-available' && status.value !== 'ready-to-install') {
+  if (!isUpdateAvailable.value) {
     detailExpanded.value = false
   }
 }
@@ -219,7 +225,7 @@ onBeforeUnmount(() => {
           <div class="updater-detail-row updater-notes">
             <span class="updater-detail-label">更新简介</span>
             <div class="updater-notes-text">
-              <template v-if="releaseNotes">{{ releaseNotes }}</template>
+              <div v-if="releaseNotes" v-html="safeReleaseNotes"></div>
               <template v-else>本次更新的详细说明暂未提供</template>
             </div>
           </div>

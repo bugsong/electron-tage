@@ -239,3 +239,38 @@ test('安装失败标记：写入后原版本启动提示 install-failed，升�
   const row = getDb().prepare("SELECT value FROM settings WHERE key = 'updater.installFail'").get()
   assert.equal(row, undefined, '升级后失败标记应被清除')
 })
+
+test('getState 合并持久化记录：按实际版本比较判定，避免已升级版本被误判为新版本', () => {
+  freshUserData()
+  const { initDb, getDb } = require('../src/main/db')
+  initDb()
+  useMockUpdater()
+
+  const writeSaved = (o) =>
+    getDb()
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run('updater.lastCheck', JSON.stringify(o))
+
+  // 场景一：持久化记录的版本等于当前版本（已升级到该版本）→ 不应误判为新版本
+  writeSaved({ status: 'update-available', latestVersion: '0.1.0', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
+  _test.reset()
+  let s = _test.getState()
+  assert.equal(s.status, 'no-update', '持久化版本等于当前版本时应判为已是最新')
+  assert.equal(s.latestVersion, null)
+
+  // 场景二：持久化记录的版本低于当前版本（升级越过该版本）→ 同样不误判
+  writeSaved({ status: 'update-available', latestVersion: '0.0.5', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
+  _test.reset()
+  s = _test.getState()
+  assert.equal(s.status, 'no-update', '持久化版本低于当前版本时应判为已是最新')
+
+  // 场景三：持久化记录的版本高于当前版本 → 仍应判为有新版本（不破坏原有能力）
+  writeSaved({ status: 'update-available', latestVersion: '0.2.0', releaseNotes: 'y', manualDownloadUrl: 'u', checkedAt: Date.now() })
+  _test.reset()
+  s = _test.getState()
+  assert.equal(s.status, 'update-available', '持久化版本高于当前版本时应判为有新版本')
+  assert.equal(s.latestVersion, '0.2.0')
+})

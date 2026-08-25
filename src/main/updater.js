@@ -454,13 +454,15 @@ function getState() {
   if (s.status === STATUS.IDLE) {
     const saved = loadCheckResult()
     if (saved) {
-      if (saved.status === STATUS.UPDATE_AVAILABLE || (saved.latestVersion && compareVersions(saved.latestVersion, s.currentVersion) > 0)) {
+      const savedIsNewer = !!saved.latestVersion && compareVersions(saved.latestVersion, s.currentVersion) > 0
+      if (savedIsNewer) {
         s.status = STATUS.UPDATE_AVAILABLE
         s.latestVersion = saved.latestVersion
         s.releaseNotes = saved.releaseNotes || ''
         s.manualDownloadUrl = saved.manualDownloadUrl || MANUAL_DOWNLOAD_URL
         s.lastCheckedAt = saved.checkedAt || null
-      } else if (saved.status === STATUS.NO_UPDATE) {
+      } else if (saved.status === STATUS.NO_UPDATE || saved.status === STATUS.UPDATE_AVAILABLE) {
+        // 持久化版本不高于当前（含已升级到该版本）：视为已是最新（spec 5.2.1）
         s.status = STATUS.NO_UPDATE
         s.lastCheckedAt = saved.checkedAt || null
       }
