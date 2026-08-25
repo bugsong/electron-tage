@@ -115,3 +115,37 @@ test('进阶码校验：签名篡改 / 机器不匹配 / 已过期 / 格式错�
   assert.equal((await verifyActivationCode('')).ok, false)
   assert.equal((await verifyActivationCode(null)).ok, false)
 })
+
+test('getLicenseStatus：未激活 / 已激活 / 已过期均正确返回', async () => {
+  freshUserData()
+  const { initDb, getDb } = require('../src/main/db')
+  initDb()
+  _test.setPublicKey(TEST_PUBLIC_PEM)
+  _test.setMachineCode('machine-abc-123')
+  const { getLicenseStatus, verifyActivationCode } = require('../src/main/license')
+
+  // 从未激活
+  assert.deepEqual(getLicenseStatus(), { activated: false })
+
+  // 激活后返回激活状态与有效期
+  const future = Date.now() + 365 * 24 * 3600 * 1000
+  const r = await verifyActivationCode(makeActivationCode('machine-abc-123', future))
+  assert.equal(r.ok, true)
+  const s = getLicenseStatus()
+  assert.equal(s.activated, true)
+  assert.equal(s.expiresAt, future)
+
+  // 已过期视为未激活（直接改写持久化状态模拟）
+  getDb()
+    .prepare("UPDATE settings SET value = ? WHERE key = 'license.state'")
+    .run(
+      JSON.stringify({
+        status: 'activated',
+        machineCode: 'machine-abc-123',
+        activatedAt: 1,
+        expiresAt: Date.now() - 1000,
+        meta: {}
+      })
+    )
+  assert.deepEqual(getLicenseStatus(), { activated: false })
+})

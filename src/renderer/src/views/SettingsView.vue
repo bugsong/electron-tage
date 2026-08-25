@@ -9,7 +9,8 @@ const settings = useSettingsStore()
 const toast = useToastStore()
 const dbPath = ref('')
 const moving = ref(false)
-// 设备唯一信息（机器码由主进程采集硬件并加密生成）
+// 设备唯一信息（机器码由主进程采集硬件并加密生成；已激活进阶版后不再展示）
+const licensed = ref(false)
 const machineCode = ref('')
 const mcFailed = ref(false)
 const mcLoading = ref(false)
@@ -22,7 +23,13 @@ onMounted(async () => {
   } catch {
     dbPath.value = ''
   }
-  loadMachineCode()
+  try {
+    const s = await api.getLicenseStatus()
+    licensed.value = !!(s && s.activated)
+  } catch {
+    licensed.value = false
+  }
+  if (!licensed.value) loadMachineCode()
 })
 
 async function loadMachineCode() {
@@ -165,7 +172,7 @@ function applyMoveResult(info) {
       <div class="st-desc st-desc-note">更改位置后，已有数据会自动迁移过去；若新位置还没有数据库，则会自动初始化</div>
     </div>
 
-    <div class="card st-card">
+    <div v-if="!licensed" class="card st-card">
       <div class="st-title">设备唯一信息(已加密)</div>
       <div class="st-desc">由本机硬件（CPUID、物理硬盘、BIOS）在本地加密生成，仅用于软件授权，不会上传；<br/>(进阶版约一杯奶茶价)请复制后发送给开发者生成进阶码</div>
       <div class="st-path">

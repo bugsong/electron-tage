@@ -58,7 +58,8 @@ const api = {
 
   // 授权：硬件信息采集与验签均在主进程，渲染进程只拿结果做展示
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
-  verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code)
+  verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code),
+  getLicenseStatus: () => ipcRenderer.invoke('license:status')
 }
 
 contextBridge.exposeInMainWorld('api', api)

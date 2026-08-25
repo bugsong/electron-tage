@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
+const crypto = require('node:crypto')
 const { app } = require('electron')
 
 /**
@@ -159,11 +160,75 @@ const TEST_SCRIPT = `
 })()
 `
 
+/**
+ * 关于页授权冒烟（可被全量 UI_SCRIPT 引用，也可用 COMATE_UI_SCOPE=about 单独跑）。
+ * __TEST_ACTIVATION_CODE__ 为占位符，运行时替换为主进程用测试密钥对生成的合法进阶码；
+ * 测试公钥通过 license._test.setPublicKey 注入，私钥仅在内存生成、不落盘。
+ */
+const ABOUT_CHECK = `
+  // 关于页授权冒烟：非法进阶码被拒 → 合法进阶码激活 → 输入框消失/已激活提示 → 进阶版金色高亮 → 重进持久化
+  try {
+    location.hash = '#/about'
+    await wait(500)
+    const licCard = [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('授权进阶版'))
+    const cmpCard = [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('草纸进阶版对比'))
+    const input = licCard && licCard.querySelector('.license-form input')
+    const actBtn = licCard && licCard.querySelector('.license-form button')
+
+    // 初始状态：未激活时展示输入框与「进阶」按钮、无「已激活进阶版」提示
+    const initialOk = !!input && !!actBtn && !!cmpCard && actBtn.innerText.includes('进阶') && !licCard.innerText.includes('已激活进阶版')
+
+    // 1) 非法进阶码：点击进阶后仍保持未激活
+    let invalidRejected = false
+    if (input) {
+      input.value = 'invalid-code-without-pipe'
+      input.dispatchEvent(new Event('input'))
+      await wait(80)
+      actBtn.click()
+      await wait(600)
+      invalidRejected = licCard && !licCard.innerText.includes('已激活进阶版')
+    }
+
+    // 2) 合法进阶码：进阶成功，输入框消失、显示「已激活进阶版」
+    const input2 = licCard && licCard.querySelector('.license-form input')
+    const actBtn2 = licCard && licCard.querySelector('.license-form button')
+    let activated = false
+    if (input2) {
+      input2.value = '__TEST_ACTIVATION_CODE__'
+      input2.dispatchEvent(new Event('input'))
+      await wait(80)
+      actBtn2.click()
+      await wait(800)
+      activated = licCard && !licCard.querySelector('.license-form') && licCard.innerText.includes('已激活进阶版')
+    }
+
+    // 3) 激活后：对比表进阶版列金色高亮（pro-active 生效）；生成提示文案不再展示
+    const proHighlight = cmpCard && cmpCard.classList.contains('pro-active')
+    const noteHidden = licCard && !licCard.innerText.includes('进阶码由开发者')
+
+    // 4) 激活后：设置页不再展示「设备唯一信息」卡片；持久化（重进关于页仍显示已激活）
+    location.hash = '#/settings'
+    await wait(500)
+    const stCard = [...document.querySelectorAll('.st-card')].find((c) => c.innerText.includes('设备唯一信息'))
+    const settingsCardHidden = !stCard
+    location.hash = '#/about'
+    await wait(500)
+    const licCard2 = [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('授权进阶版'))
+    const persisted = licCard2 && licCard2.innerText.includes('已激活进阶版')
+
+    // 5) 直接 IPC：非法进阶码返回 { ok:false }
+    const ipcBad = await api.verifyActivationCode('bad-code')
+    results.push('about-license => ' + (initialOk && invalidRejected && activated && proHighlight && noteHidden && settingsCardHidden && persisted && !ipcBad.ok ? 'OK' : 'initial=' + initialOk + ' invalid=' + invalidRejected + ' activated=' + activated + ' pro=' + proHighlight + ' note=' + noteHidden + ' settingsCard=' + settingsCardHidden + ' persisted=' + persisted + ' ipcBad=' + JSON.stringify(ipcBad)))
+  } catch (err) {
+    results.push('about-license => ERR ' + String(err).slice(0, 120))
+  }
+`
+
 const UI_SCRIPT = `
 (async () => {
   const api = window.api
   const wait = (ms) => new Promise((res) => setTimeout(res, ms))
-  const routes = ['/home', '/practice', '/wrong', '/notes', '/favorites', '/questions', '/settings', '/practice/session', '/practice/result']
+  const routes = ['/home', '/practice', '/wrong', '/notes', '/favorites', '/questions', '/settings', '/about', '/practice/session', '/practice/result']
   const results = []
 
   // 等待应用与路由真正就绪（冷启动/机器繁忙时主线程可能延迟数秒），避免导航竞态
@@ -777,7 +842,7 @@ const UI_SCRIPT = `
   } catch (err) {
     results.push('settings-device-info => ERR ' + String(err).slice(0, 80))
   }
-
+${ABOUT_CHECK}
   return results.join('\\n')
 })()
 `
@@ -806,11 +871,54 @@ function runE2eTest(win) {
   })
 }
 
+/**
+ * 生成仅供 UI 冒烟使用的合法进阶码：
+ * 运行时临时生成 ed25519 密钥对，公钥注入授权模块、私钥仅存于内存，
+ * Electron 代码与磁盘上均不落任何私钥。
+ */
+async function buildTestActivationCode() {
+  const license = require('./license')
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519')
+  license._test.setPublicKey(publicKey.export({ type: 'spki', format: 'pem' }))
+  const mc = await license.getMachineCode()
+  if (!mc.ok) throw new Error('无法获取本机机器码，无法生成测试进阶码')
+  const meta = JSON.stringify({ machineCode: mc.code, expiresAt: Date.now() + 24 * 3600 * 1000 })
+  const sig = crypto.sign(null, Buffer.from(meta, 'utf8'), privateKey)
+  return Buffer.from(meta, 'utf8').toString('base64') + '|' + sig.toString('base64')
+}
+
+/** 组装冒烟脚本：默认全量 UI_SCRIPT；COMATE_UI_SCOPE=about 时仅跑关于页授权检查 */
+async function buildUiSmokeScript() {
+  const testCode = await buildTestActivationCode()
+  if (process.env.COMATE_UI_SCOPE === 'about') {
+    return `
+(async () => {
+  const api = window.api
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+  const results = []
+  // 等待应用与路由就绪
+  location.hash = '#/home'
+  await wait(800)
+  for (let i = 0; i < 30; i++) {
+    const main = document.querySelector('.app-main')
+    const tag = main && main.querySelector('.page-title-tag')
+    if (tag && tag.innerText.includes('首页')) break
+    await wait(300)
+  }
+${ABOUT_CHECK}
+  return results.join('\\n')
+})()
+`.replace('__TEST_ACTIVATION_CODE__', testCode)
+  }
+  return UI_SCRIPT.replace('__TEST_ACTIVATION_CODE__', testCode)
+}
+
 function runUiSmoke(win) {
   win.webContents.once('did-finish-load', () => {
     setTimeout(async () => {
       try {
-        const result = await win.webContents.executeJavaScript(UI_SCRIPT, true)
+        const script = await buildUiSmokeScript()
+        const result = await win.webContents.executeJavaScript(script, true)
         console.log('==== UI SMOKE ====')
         console.log(result)
       } catch (err) {

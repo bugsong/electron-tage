@@ -14,6 +14,9 @@
   --success: #1fa268;
   --success-weak: #e6f6ef;
   --warning: #e8a13c;
+  --gold: #a8800c;
+  --gold-weak: rgba(212, 175, 55, 0.12);
+  --gold-border: rgba(212, 175, 55, 0.5);
   --shadow: 0 1px 3px rgba(15, 30, 60, 0.06), 0 6px 18px rgba(15, 30, 60, 0.06);
 }
 
@@ -32,6 +35,9 @@ html[data-theme='dark'] {
   --success: #3fbf8a;
   --success-weak: #1d3329;
   --warning: #e8a13c;
+  --gold: #e2bd3f;
+  --gold-weak: rgba(226, 189, 63, 0.16);
+  --gold-border: rgba(226, 189, 63, 0.55);
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 

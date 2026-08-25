@@ -11,7 +11,8 @@ const routes = [
   { path: '/notes', name: 'notes', component: () => import('./views/NotesView.vue'), meta: { title: '笔记' } },
   { path: '/favorites', name: 'favorites', component: () => import('./views/FavoritesView.vue'), meta: { title: '收藏' } },
   { path: '/questions', name: 'questions', component: () => import('./views/QuestionsView.vue'), meta: { title: '题库' } },
-  { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue'), meta: { title: '设置' } }
+  { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue'), meta: { title: '设置' } },
+  { path: '/about', name: 'about', component: () => import('./views/AboutView.vue'), meta: { title: '关于' } }
 ]
 
 const router = createRouter({

@@ -205,6 +205,22 @@ async function verifyActivationCode(code) {
 
 /* ---------------- IPC 接口 ---------------- */
 
+/** 读取本地持久化的授权状态（供「关于」页展示；未激活或已过期视为未激活） */
+function getLicenseStatus() {
+  try {
+    const row = getDb().prepare("SELECT value FROM settings WHERE key = 'license.state'").get()
+    if (!row) return { activated: false }
+    const s = JSON.parse(row.value)
+    const expiresAt = Number(s.expiresAt)
+    if (s.status === 'activated' && Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+      return { activated: true, activatedAt: s.activatedAt, expiresAt }
+    }
+    return { activated: false }
+  } catch {
+    return { activated: false }
+  }
+}
+
 function registerLicenseIpc() {
   // 返回本机机器码 hex 字符串；读取硬件失败时返回 null（渲染进程仅展示，不做硬件处理）
   ipcMain.handle('get-machine-code', async () => {
@@ -214,6 +230,9 @@ function registerLicenseIpc() {
 
   // 参数：进阶码字符串 → 返回校验结果 { ok:true, activatedAt, expiresAt } 或 { ok:false, reason }
   ipcMain.handle('verify-activation-code', (e, code) => verifyActivationCode(code))
+
+  // 返回本地持久化的授权状态 { activated, activatedAt?, expiresAt? }
+  ipcMain.handle('license:status', () => getLicenseStatus())
 }
 
 /* ---------------- 测试专用钩子（生产代码不调用） ---------------- */
@@ -228,4 +247,4 @@ const _test = {
   cleanField
 }
 
-module.exports = { getMachineCode, verifyActivationCode, registerLicenseIpc, _test }
+module.exports = { getMachineCode, verifyActivationCode, getLicenseStatus, registerLicenseIpc, _test }

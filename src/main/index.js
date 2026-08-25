@@ -9,7 +9,12 @@ const { runE2eTest, runUiSmoke } = require('./e2e')
 
 // 端到端/UI 自检：使用独立临时数据库，避免污染真实数据
 if (process.env.COMATE_TEST === '1' || process.env.COMATE_UI === '1') {
-  app.setPath('userData', path.join(os.tmpdir(), 'comate-e2e-test'))
+  const testDataDir = path.join(os.tmpdir(), 'comate-e2e-test')
+  // 每次测试从全新 userData 开始，避免上次运行遗留的授权状态/数据污染断言
+  try {
+    fs.rmSync(testDataDir, { recursive: true, force: true })
+  } catch {}
+  app.setPath('userData', testDataDir)
 }
 
 // 设置磁盘缓存路径，避免权限问题导致的缓存错误
