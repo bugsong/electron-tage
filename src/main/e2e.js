@@ -152,6 +152,19 @@ const UI_SCRIPT = `
   const wait = (ms) => new Promise((res) => setTimeout(res, ms))
   const routes = ['/home', '/practice', '/wrong', '/notes', '/favorites', '/questions', '/settings', '/practice/session', '/practice/result']
   const results = []
+
+  // 等待应用与路由真正就绪（冷启动/机器繁忙时主线程可能延迟数秒），避免导航竞态
+  async function waitAppReady() {
+    for (let i = 0; i < 60; i++) {
+      location.hash = '#/practice'
+      await wait(400)
+      const main = document.querySelector('.app-main')
+      if (main && main.innerText.includes('练多分')) return true
+    }
+    return false
+  }
+  results.push('app-ready => ' + (await waitAppReady() ? 'OK' : 'TIMEOUT'))
+
   for (const r of routes) {
     location.hash = '#' + r
     await wait(500)
@@ -613,6 +626,40 @@ const UI_SCRIPT = `
     }
   } catch (err) {
     results.push('note-ellipsis => ERR ' + String(err).slice(0, 80))
+  }
+
+  // 侧边栏抽屉冒烟：收起后宽度为 0，收起/展开按钮同位置，状态持久化到数据库
+  try {
+    const aside = document.querySelector('.sidebar')
+    // 若初始为收起状态（上次残留），先恢复展开，保证从展开态开始测试
+    const fab0 = document.querySelector('.sidebar-corner-btn[title="展开导航"]')
+    if (fab0) {
+      fab0.click()
+      await wait(400)
+    }
+    const collapseBtn = aside && aside.querySelector('.sidebar-corner-btn[title="收起导航"]')
+    if (collapseBtn && aside) {
+      const w0 = Math.round(aside.getBoundingClientRect().width)
+      const cbRect = collapseBtn.getBoundingClientRect()
+      collapseBtn.click()
+      await wait(400)
+      const w1 = Math.round(aside.getBoundingClientRect().width)
+      const fab = document.querySelector('.sidebar-corner-btn[title="展开导航"]')
+      const fabRect = fab ? fab.getBoundingClientRect() : null
+      const stored1 = (await api.getSettings()).sidebarCollapsed
+      const samePos = fabRect && Math.round(cbRect.left) === Math.round(fabRect.left) && Math.round(cbRect.top) === Math.round(fabRect.top)
+      const okCollapsed = w1 === 0 && !!fab && samePos && stored1 === '1'
+      if (fab) fab.click()
+      await wait(400)
+      const w2 = Math.round(aside.getBoundingClientRect().width)
+      const stored2 = (await api.getSettings()).sidebarCollapsed
+      const okRestore = w2 > 0 && stored2 === '0'
+      results.push('sidebar-drawer => ' + (okCollapsed && okRestore ? 'OK w=' + w0 + '->' + w1 + '->' + w2 + ' pos=' + (samePos ? 'same' : 'diff') : 'w=' + w0 + '->' + w1 + '->' + w2 + ' pos=' + (samePos ? 'same' : 'diff') + ' stored=' + stored1 + ',' + stored2 + ' fab=' + (fab ? 'Y' : 'N')))
+    } else {
+      results.push('sidebar-drawer => NO_BTN')
+    }
+  } catch (err) {
+    results.push('sidebar-drawer => ERR ' + String(err).slice(0, 80))
   }
 
   return results.join('\\n')

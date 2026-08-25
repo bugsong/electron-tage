@@ -144,7 +144,7 @@ function applyMoveResult(info) {
       @close="pendingMove = null"
     />
 
-    <div class="st-about">爱硬刷 · 仅本机使用 · 数据不出本机</div>
+    <div class="st-about">题迹 · 仅本机使用 · 数据不出本机</div>
   </div>
 </template>
 

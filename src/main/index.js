@@ -27,7 +27,7 @@ function createWindow() {
     height: 820,
     minWidth: 1080,
     minHeight: 700,
-    title: '爱硬刷',
+    title: '题迹',
     backgroundColor: '#f3f6fa',
     autoHideMenuBar: true,
     webPreferences: {

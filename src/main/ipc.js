@@ -656,7 +656,9 @@ function registerSettingsHandlers() {
       penSize: map.penSize || 'normal',
       penColor: map.penColor || '#20242c',
       eraserSize: map.eraserSize || 'normal',
-      eraserMode: map.eraserMode || 'pixel'
+      eraserMode: map.eraserMode || 'pixel',
+      // 侧边栏抽屉状态（'1' 收起）
+      sidebarCollapsed: map.sidebarCollapsed || '0'
     }
   })
 
