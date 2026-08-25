@@ -88,13 +88,15 @@ onBeforeUnmount(() => {
 }
 .rte-editor {
   height: var(--rte-height);
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 .rte :deep(.w-e-text-container) {
   height: var(--rte-height) !important;
   background: var(--card);
+  overflow-y: auto;
 }
 .rte :deep(img) {
   max-width: 100%;
+  height: auto;
 }
 </style>

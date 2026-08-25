@@ -258,6 +258,7 @@ watch(() => props.open, async (v) => {
 }
 .paper-canvas {
   flex: 1;
+  min-width: 0;
   cursor: crosshair;
   touch-action: none;
 }
@@ -274,6 +275,8 @@ watch(() => props.open, async (v) => {
   padding: 0.6rem 0.3rem;
   background: rgba(248, 249, 252, 0.8);
   border-left: 1px solid rgba(0, 0, 0, 0.06);
+  position: relative;
+  z-index: 1;
 }
 .tool-btn {
   width: 2.2rem;

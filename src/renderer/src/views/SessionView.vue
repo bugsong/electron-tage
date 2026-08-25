@@ -185,7 +185,7 @@ function isRemoved(q) {
 </script>
 
 <template>
-  <div class="page session-page">
+  <div class="session-page">
     <div class="session-topbar">
       <button class="btn btn-text" title="保存进度并返回" @click="leave">← 返回</button>
       <span class="session-timer">
@@ -272,7 +272,9 @@ function isRemoved(q) {
 
 <style scoped>
 .session-page {
-  max-width: 860px;
+  width: 80%;
+  max-width: 80%;
+  margin: 0 auto;
 }
 .session-topbar {
   position: sticky;

@@ -93,6 +93,7 @@ a {
   min-width: 0;
   overflow-y: auto;
   padding: 1.4rem 1.8rem 3rem;
+  scrollbar-gutter: stable;
 }
 
 .page {
@@ -294,6 +295,7 @@ a {
   font-size: 1.02rem;
 }
 .modal-body {
+  position: relative;
   padding: 1.2rem;
   overflow-y: auto;
 }

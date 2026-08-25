@@ -94,6 +94,12 @@ function preview(content) {
   border-left: 2px solid var(--primary);
   display: inline;
 }
+.note-body :deep(img) {
+  max-width: 1.1em;
+  max-height: 1.1em;
+  vertical-align: -0.2em;
+  object-fit: cover;
+}
 .note-meta {
   display: flex;
   align-items: center;

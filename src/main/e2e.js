@@ -119,27 +119,179 @@ const TEST_SCRIPT = `
 
 const UI_SCRIPT = `
 (async () => {
+  const api = window.api
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms))
   const routes = ['/home', '/practice', '/wrong', '/notes', '/favorites', '/questions', '/settings', '/practice/session', '/practice/result']
   const results = []
   for (const r of routes) {
     location.hash = '#' + r
-    await new Promise((res) => setTimeout(res, 500))
+    await wait(500)
     const main = document.querySelector('.app-main')
     results.push(r + ' => ' + (main ? main.innerText.replace(/\\n+/g, ' ').slice(0, 50) : 'NO MAIN'))
   }
   // 富文本编辑器冒烟：打开「新增题目」，检查 WangEditor 工具栏挂载
   location.hash = '#/questions'
-  await new Promise((res) => setTimeout(res, 600))
+  await wait(600)
   const addBtn = [...document.querySelectorAll('button')].find((b) => b.innerText.includes('新增题目'))
   if (addBtn) {
     addBtn.click()
-    await new Promise((res) => setTimeout(res, 1500))
+    await wait(1500)
     const rte = document.querySelector('.w-e-toolbar')
     const rteEditor = document.querySelector('.w-e-text-container')
     results.push('rte-editor => ' + (rte && rteEditor ? 'OK' : 'NOT_MOUNTED'))
   } else {
     results.push('rte-editor => NO_ADD_BUTTON')
   }
+
+  // 草纸工具栏冒烟：首次打开应渲染工具栏按钮
+  try {
+    let tree = await api.categoryTree()
+    if (!tree.length) {
+      const bigCanvas = document.createElement('canvas')
+      bigCanvas.width = 2200
+      bigCanvas.height = 1600
+      const bctx = bigCanvas.getContext('2d')
+      bctx.fillStyle = '#c0392b'
+      bctx.fillRect(0, 0, 2200, 1600)
+      const bigBlob = await new Promise((r) => bigCanvas.toBlob(r, 'image/png'))
+      const savedImg = await api.saveImage(new Uint8Array(await bigBlob.arrayBuffer()))
+      await api.importRows([
+        { category1: 'UI测试', category2: '子类', stem: '草纸UI测试题1<img src="local-image://' + savedImg.id + '">', options: ['a', 'b', 'c', 'd'], answer: 'A', analysis: '' },
+        { category1: 'UI测试', category2: '子类', stem: '草纸UI测试题2<img src="local-image://' + savedImg.id + '">', options: ['a', 'b', 'c', 'd'], answer: 'B', analysis: '' }
+      ])
+      tree = await api.categoryTree()
+    }
+    const top = tree[0]
+    const sid = await api.startPractice({ type: 'special', title: '草纸UI测试', categoryIds: [top.id], count: 2 })
+    location.hash = '#/practice/session?sessionId=' + sid.id
+    await wait(1200)
+
+    const cards = document.querySelectorAll('.q-card')
+    const sessPage = document.querySelector('.session-page')
+    const sessMain = document.querySelector('.app-main')
+    results.push('session-width => page=' + (sessPage ? Math.round(sessPage.getBoundingClientRect().width) : -1) + ' card=' + (cards[0] ? Math.round(cards[0].getBoundingClientRect().width) : -1) + ' win=' + window.innerWidth + ' appMain=' + (sessMain ? Math.round(sessMain.getBoundingClientRect().width) : -1))
+    const btn0 = cards[0] && cards[0].querySelector('.q-head-right button[title="草纸"]')
+    if (btn0) {
+      btn0.click()
+      await wait(800)
+      const tools0 = cards[0].querySelector('.paper-tools')
+      const overlay0 = cards[0].querySelector('.paper-overlay')
+      const inBounds0 = tools0 && overlay0
+        ? tools0.getBoundingClientRect().right <= overlay0.getBoundingClientRect().right + 1
+        : false
+      results.push('paper-1st-open => ' + (tools0 ? 'OK(' + tools0.querySelectorAll('.tool-btn').length + 'btns' + (inBounds0 ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+      results.push('paper-1st-overlay => ' + (overlay0 ? overlay0.getBoundingClientRect().width + 'x' + overlay0.getBoundingClientRect().height : 'NO_OVERLAY'))
+      const exitBtn = tools0 && tools0.querySelector('.tool-btn.exit')
+      if (exitBtn) exitBtn.click()
+      await wait(400)
+    } else {
+      results.push('paper-1st-open => NO_PAPER_BTN')
+    }
+
+    if (cards[1]) {
+      const btn1 = cards[1].querySelector('.q-head-right button[title="草纸"]')
+      if (btn1) {
+        btn1.click()
+        await wait(800)
+        const tools1 = cards[1].querySelector('.paper-tools')
+        const overlay1 = cards[1].querySelector('.paper-overlay')
+        const inBounds1 = tools1 && overlay1
+          ? tools1.getBoundingClientRect().right <= overlay1.getBoundingClientRect().right + 1
+          : false
+        results.push('paper-2nd-open => ' + (tools1 ? 'OK(' + tools1.querySelectorAll('.tool-btn').length + 'btns' + (inBounds1 ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+      }
+    }
+
+    // 编辑回显冒烟：打开含图题目的编辑弹窗，题干富文本应回显图片
+    const echoStem = '编辑回显测试' + Date.now()
+    const echoCanvas = document.createElement('canvas')
+    echoCanvas.width = 800
+    echoCanvas.height = 500
+    echoCanvas.getContext('2d').fillStyle = '#2f7bf6'
+    echoCanvas.getContext('2d').fillRect(0, 0, 800, 500)
+    const echoBlob = await new Promise((r) => echoCanvas.toBlob(r, 'image/png'))
+    const echoImg = await api.saveImage(new Uint8Array(await echoBlob.arrayBuffer()))
+    await api.importRows([
+      { category1: 'UI测试', category2: '子类', stem: echoStem + '<img src="local-image://' + echoImg.id + '">', options: ['a', 'b', 'c', 'd'], answer: 'A', analysis: '' }
+    ])
+    location.hash = '#/questions'
+    await wait(1200)
+    const qmRows = [...document.querySelectorAll('.qm-row')]
+    const target = qmRows.find((r) => r.innerText.includes('编辑回显测试'))
+    if (target) {
+      const editBtn = [...target.querySelectorAll('button')].find((b) => b.innerText.trim() === '编辑')
+      if (editBtn) {
+        editBtn.click()
+        await wait(1200)
+        const rteContainer = document.querySelector('.w-e-text-container')
+        const hasImg = rteContainer ? !!rteContainer.querySelector('img') : false
+        const rteHtml = rteContainer ? rteContainer.innerHTML.slice(0, 500) : ''
+        const rteText = rteContainer ? rteContainer.innerText.slice(0, 40) : ''
+        results.push('edit-echo => ' + (hasImg ? 'OK(has-img)' : 'NO_IMG') + ' text=' + rteText.replace(/\\n/g, '|'))
+        results.push('edit-echo-html => ' + rteHtml.replace(/\\n/g, ' '))
+        const closeBtn = [...document.querySelectorAll('.modal-header button, .modal-footer button')].find(
+          (b) => b.innerText.includes('取消') || b.innerText.includes('关闭')
+        )
+        if (closeBtn) closeBtn.click()
+        await wait(300)
+      } else {
+        results.push('edit-echo => NO_EDIT_BTN')
+      }
+    } else {
+      results.push('edit-echo => NO_ROW')
+    }
+
+    // 空选项题目：做题时应显示 A/B/C/D 四个槽
+    try {
+      await api.importRows([{ category1: '空选项分类', category2: '', stem: '空选项占位题', options: ['a', 'b', 'c', 'd'], answer: 'A', analysis: '' }])
+      const t3 = await api.categoryTree()
+      const emptyCat = t3.find((n) => n.name === '空选项分类')
+      const qs3 = await api.listQuestions({ categoryId: emptyCat.id, page: 1, pageSize: 10 })
+      for (const q of qs3.items) await api.deleteQuestion(q.id)
+      const eq = await api.saveQuestion({ id: null, categoryId: emptyCat.id, stem: '空选项题目测试', options: ['', '', '', ''], answer: 'A', analysis: '' })
+      const eqs = await api.startPractice({ type: 'special', title: '空选项测试', categoryIds: [emptyCat.id], count: 1 })
+      location.hash = '#/practice/session?sessionId=' + eqs.id
+      await wait(1000)
+      const card = document.querySelector('.q-card')
+      const optCount = card ? card.querySelectorAll('.q-option').length : 0
+      const letters = card ? [...card.querySelectorAll('.q-letter')].map((s) => s.innerText).join('') : ''
+      results.push('empty-options => slots=' + optCount + ' letters=' + letters)
+
+      // 回看页冒烟：答题卡点查看进入独立回看页，草纸工具栏应正常、页面宽为应用内容区80%
+      location.hash = '#/practice/review?sessionId=' + eqs.id + '&index=0'
+      await wait(1000)
+      const rvPage = document.querySelector('.review-page')
+      const appMain = document.querySelector('.app-main')
+      const mcs = appMain ? getComputedStyle(appMain) : null
+      const contentW = appMain && mcs
+        ? appMain.clientWidth - parseFloat(mcs.paddingLeft) - parseFloat(mcs.paddingRight)
+        : window.innerWidth
+      const rvW = rvPage ? Math.round((rvPage.getBoundingClientRect().width / contentW) * 100) : -1
+      results.push('review-width => ' + rvW + '%')
+      results.push('review-w-abs => ' + (rvPage ? Math.round(rvPage.getBoundingClientRect().width) : -1))
+      results.push('window-info => win=' + window.innerWidth + ' appMain=' + (appMain ? appMain.getBoundingClientRect().width : -1) + ' content=' + Math.round(contentW))
+      const rvCard = rvPage ? rvPage.querySelector('.q-card') : null
+      const rvBtn = rvCard ? rvCard.querySelector('.q-head-right button[title="草纸"]') : null
+      if (rvBtn) {
+        rvBtn.click()
+        await wait(600)
+        const rvTools = rvPage.querySelector('.paper-tools')
+        const rvIn = rvTools
+          ? rvTools.getBoundingClientRect().right <= rvCard.getBoundingClientRect().right + 1
+          : false
+        results.push('review-paper => ' + (rvTools ? 'OK(' + rvTools.querySelectorAll('.tool-btn').length + 'btns' + (rvIn ? '' : '/OUT_OF_BOUNDS') + ')' : 'TOOLBAR_MISSING'))
+        const rvExit = rvTools && rvTools.querySelector('.tool-btn.exit')
+        if (rvExit) rvExit.click()
+      } else {
+        results.push('review-paper => NO_PAPER_BTN')
+      }
+    } catch (err) {
+      results.push('empty-options => ERR ' + String(err).slice(0, 100))
+    }
+  } catch (err) {
+    results.push('paper-test => ERR ' + String(err && err.stack ? err.stack : err).slice(0, 120))
+  }
+
   return results.join('\\n')
 })()
 `

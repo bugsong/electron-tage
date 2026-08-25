@@ -76,7 +76,9 @@ app.whenReady().then(() => {
     const id = new URL(req.url).hostname
     const img = getImage(id)
     if (!img) return new Response(null, { status: 404 })
-    return new Response(img.data, { headers: { 'content-type': img.mime } })
+    return new Response(img.data, {
+      headers: { 'content-type': img.mime, 'access-control-allow-origin': '*' }
+    })
   })
 
   registerIpc()
@@ -98,5 +100,8 @@ app.on('window-all-closed', () => {
 
 // 自定义协议需在 ready 前声明特权
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'local-image', privileges: { secure: true, supportFetchAPI: true, stream: true } }
+  {
+    scheme: 'local-image',
+    privileges: { secure: true, supportFetchAPI: true, stream: true, corsEnabled: true }
+  }
 ])

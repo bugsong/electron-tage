@@ -3,7 +3,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtDuration, plainText } from '../utils/format'
-import QuestionDetailModal from '../components/QuestionDetailModal.vue'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
@@ -12,7 +11,6 @@ const toast = useToastStore()
 
 const session = ref(null)
 const loading = ref(true)
-const detailFor = ref(null)
 
 const wrongCount = computed(() => (session.value ? session.value.result.filter((r) => !r).length : 0))
 const unanswered = computed(() =>
@@ -69,8 +67,7 @@ function getQuestionStatus(i) {
 }
 
 function openQuestionDetail(i) {
-  const q = session.value.questions[i]
-  detailFor.value = { q, i }
+  router.push({ path: '/practice/review', query: { sessionId: route.query.sessionId, index: i } })
 }
 </script>
 
@@ -157,7 +154,7 @@ function openQuestionDetail(i) {
           v-for="(q, i) in session.questions"
           :key="q.id"
           class="r-row"
-          @click="detailFor = { q, i }"
+          @click="openQuestionDetail(i)"
         >
           <span class="r-no">{{ i + 1 }}</span>
           <span class="tag" :class="session.result[i] ? 'tag-success' : 'tag-danger'">
@@ -168,7 +165,7 @@ function openQuestionDetail(i) {
             <template v-if="session.answers[i] != null">我的 {{ session.answers[i] }}</template>
             <template v-else>未作答</template>
           </span>
-          <button class="btn btn-text" @click.stop="detailFor = { q, i }">查看</button>
+          <button class="btn btn-text" @click.stop="openQuestionDetail(i)">查看</button>
         </div>
       </div>
 
@@ -177,14 +174,6 @@ function openQuestionDetail(i) {
         <button v-if="wrongCount" class="btn btn-primary" @click="reviewWrong">错题重练（{{ wrongCount }} 题）</button>
       </div>
     </template>
-
-    <QuestionDetailModal
-      v-if="detailFor"
-      :question="{ ...detailFor.q, no: detailFor.i + 1 }"
-      :my-answer="session.answers[detailFor.i]"
-      :correct="session.result[detailFor.i]"
-      @close="detailFor = null"
-    />
   </div>
 </template>
 

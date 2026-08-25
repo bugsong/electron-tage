@@ -20,12 +20,11 @@ const LETTERS = ['A', 'B', 'C', 'D']
 const paperOpen = ref(false)
 
 const safeStem = computed(() => sanitizeHtml(props.question.stem))
-// 过滤空选项：截图已包含选项时可不填写；保留字母对应关系避免索引错位
-const safeOptions = computed(() =>
-  (props.question.options || [])
-    .map((o, i) => ({ letter: LETTERS[i], text: sanitizeHtml(o) }))
-    .filter((o) => o.text.trim())
-)
+// 选项未填写时也保留 A/B/C/D 四个槽，保证可作答与字母对应
+const safeOptions = computed(() => {
+  const arr = props.question.options || []
+  return LETTERS.map((letter, i) => ({ letter, text: sanitizeHtml(arr[i] || '') }))
+})
 
 function onPick(letter) {
   if (props.showResult || paperOpen.value) return
@@ -166,6 +165,13 @@ function togglePaper() {
   line-height: 1.85;
   margin-bottom: 0.9rem;
   word-break: break-word;
+}
+.q-stem :deep(img),
+.q-option-text :deep(img) {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.3rem auto;
 }
 .q-options {
   display: flex;

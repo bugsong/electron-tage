@@ -6,6 +6,7 @@ const routes = [
   { path: '/practice', name: 'practice', component: () => import('./views/PracticeView.vue'), meta: { title: '专项练习' } },
   { path: '/practice/session', name: 'session', component: () => import('./views/SessionView.vue'), meta: { title: '刷题' } },
   { path: '/practice/result', name: 'result', component: () => import('./views/ResultView.vue'), meta: { title: '练习结果' } },
+  { path: '/practice/review', name: 'review', component: () => import('./views/ReviewView.vue'), meta: { title: '题目回看' } },
   { path: '/wrong', name: 'wrong', component: () => import('./views/WrongView.vue'), meta: { title: '错题' } },
   { path: '/notes', name: 'notes', component: () => import('./views/NotesView.vue'), meta: { title: '笔记' } },
   { path: '/favorites', name: 'favorites', component: () => import('./views/FavoritesView.vue'), meta: { title: '收藏' } },

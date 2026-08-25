@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { api } from '../api'
 import Modal from './Modal.vue'
 import RichTextEditor from './RichTextEditor.vue'
@@ -31,23 +31,23 @@ watch(topId, () => {
   childId.value = ''
 })
 
-onMounted(() => {
-  if (props.question) {
-    const q = props.question
-    const top = props.tree.find((n) => n.id === q.categoryId) || props.tree.find((n) => n.children.some((c) => c.id === q.categoryId))
-    if (top) {
-      topId.value = String(top.id)
-      const child = top.children.find((c) => c.id === q.categoryId)
-      if (child) childId.value = String(child.id)
-    }
-    stem.value = q.stem
-    options.value = [...(q.options || [])]
-    answer.value = q.answer
-    analysis.value = q.analysis || ''
-  } else if (props.tree.length) {
-    topId.value = String(props.tree[0].id)
+// setup 顶层同步初始化：确保富文本编辑器首次渲染即带正确内容，
+// 避免在 onMounted 中赋值导致编辑器先以空值初始化、后被回写清空
+if (props.question) {
+  const q = props.question
+  const top = props.tree.find((n) => n.id === q.categoryId) || props.tree.find((n) => n.children.some((c) => c.id === q.categoryId))
+  if (top) {
+    topId.value = String(top.id)
+    const child = top.children.find((c) => c.id === q.categoryId)
+    if (child) childId.value = String(child.id)
   }
-})
+  stem.value = q.stem
+  options.value = [...(q.options || [])]
+  answer.value = q.answer
+  analysis.value = q.analysis || ''
+} else if (props.tree.length) {
+  topId.value = String(props.tree[0].id)
+}
 
 async function save() {
   const categoryId = childId.value ? Number(childId.value) : Number(topId.value)
@@ -56,8 +56,8 @@ async function save() {
     return
   }
   const cleanStem = sanitizeHtml(stem.value.trim())
-  // 富文本可能只有空标签（<p><br></p>），按纯文本判空
-  if (!cleanStem.replace(/<[^>]*>/g, '').trim()) {
+  // 富文本可能只有空标签（<p><br></p>）或只有图片，按纯文本判空（含图片则视为有内容）
+  if (!cleanStem.replace(/<[^>]*>/g, '').trim() && !/<img\b/i.test(cleanStem)) {
     toast.error('题干不能为空')
     return
   }
