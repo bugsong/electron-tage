@@ -1,0 +1,51 @@
+const { contextBridge, ipcRenderer } = require('electron')
+
+const api = {
+  // 分类
+  categoryTree: () => ipcRenderer.invoke('category:tree'),
+
+  // 题目
+  listQuestions: (filter) => ipcRenderer.invoke('question:list', filter),
+  getQuestion: (id) => ipcRenderer.invoke('question:get', id),
+  saveQuestion: (payload) => ipcRenderer.invoke('question:save', payload),
+  deleteQuestion: (id) => ipcRenderer.invoke('question:delete', id),
+  pickExcel: () => ipcRenderer.invoke('dialog:pickExcel'),
+  parseExcel: (filePath) => ipcRenderer.invoke('excel:parse', filePath),
+  importRows: (rows) => ipcRenderer.invoke('question:importRows', rows),
+
+  // 错题
+  listWrong: (filter) => ipcRenderer.invoke('wrong:list', filter),
+  removeWrong: (questionId) => ipcRenderer.invoke('wrong:remove', questionId),
+
+  // 收藏
+  toggleFavorite: (questionId) => ipcRenderer.invoke('favorite:toggle', questionId),
+  listFavorites: () => ipcRenderer.invoke('favorite:list'),
+
+  // 笔记
+  getNote: (questionId) => ipcRenderer.invoke('note:get', questionId),
+  saveNote: (questionId, content) => ipcRenderer.invoke('note:save', questionId, content),
+  listNotes: () => ipcRenderer.invoke('note:list'),
+
+  // 草稿笔迹
+  getDraft: (questionId) => ipcRenderer.invoke('draft:get', questionId),
+  saveDraft: (questionId, paths) => ipcRenderer.invoke('draft:save', questionId, paths),
+  clearDraft: (questionId) => ipcRenderer.invoke('draft:clear', questionId),
+
+  // 练习会话
+  startPractice: (payload) => ipcRenderer.invoke('practice:start', payload),
+  getActivePractice: () => ipcRenderer.invoke('practice:getActive'),
+  getSession: (id) => ipcRenderer.invoke('practice:getSession', id),
+  savePracticeProgress: (id, answers, elapsedMs) =>
+    ipcRenderer.invoke('practice:saveProgress', id, answers, elapsedMs),
+  submitPractice: (id, answers, elapsedMs) =>
+    ipcRenderer.invoke('practice:submit', id, answers, elapsedMs),
+  abandonPractice: (id) => ipcRenderer.invoke('practice:abandon', id),
+
+  // 统计与设置
+  getStats: () => ipcRenderer.invoke('stats:home'),
+  getSettings: () => ipcRenderer.invoke('settings:getAll'),
+  setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
+  getDbPath: () => ipcRenderer.invoke('app:dbPath')
+}
+
+contextBridge.exposeInMainWorld('api', api)

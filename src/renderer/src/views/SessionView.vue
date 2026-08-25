@@ -1,0 +1,310 @@
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, watch, toRaw } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { api } from '../api'
+import { fmtDuration } from '../utils/format'
+import QuestionCard from '../components/QuestionCard.vue'
+import NoteEditorModal from '../components/NoteEditorModal.vue'
+import QuickSettingsModal from '../components/QuickSettingsModal.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { useToastStore } from '../stores/toast'
+
+const route = useRoute()
+const router = useRouter()
+const toast = useToastStore()
+
+const session = ref(null)
+const questions = ref([])
+const answers = ref([])
+const favorites = ref(new Set())
+const elapsedMs = ref(0)
+const loading = ref(true)
+
+const noteFor = ref(null)
+const settingsOpen = ref(false)
+const confirmSubmit = ref(false)
+const confirmAbandon = ref(false)
+const confirmRemoveWrong = ref(null)
+
+const removedWrong = ref(new Set())
+const removedQuestionIds = new Set()
+
+let timer = null
+let tick = 0
+let debounceTimer = null
+
+const origin = computed(() => {
+  const t = session.value && session.value.type
+  if (t === 'wrong_review') return '/wrong'
+  if (t === 'favorite') return '/favorites'
+  return '/practice'
+})
+
+const answeredCount = computed(() => answers.value.filter((a) => a != null).length)
+const unAnsweredCount = computed(() => questions.value.length - answeredCount.value)
+const displayTime = computed(() => fmtDuration(elapsedMs.value))
+
+async function load() {
+  const id = route.query.sessionId
+  if (!id) {
+    router.replace('/practice')
+    return
+  }
+  try {
+    const s = await api.getSession(id)
+    if (!s || s.status !== 'in_progress') {
+      router.replace('/practice')
+      return
+    }
+    session.value = s
+    questions.value = s.questions
+    answers.value =
+      Array.isArray(s.answers) && s.answers.length === s.questions.length
+        ? s.answers
+        : new Array(s.questions.length).fill(null)
+    elapsedMs.value = s.durationMs || 0
+    try {
+      const favs = await api.listFavorites()
+      favorites.value = new Set(favs.map((f) => f.questionId))
+    } catch {}
+    startTimer()
+  } catch (err) {
+    toast.error('加载练习失败：' + (err.message || err))
+  } finally {
+    loading.value = false
+  }
+}
+onMounted(load)
+
+/* ---- 计时与进度保存 ---- */
+
+function startTimer() {
+  timer = setInterval(() => {
+    elapsedMs.value += 1000
+    tick++
+    if (tick % 10 === 0) persist()
+  }, 1000)
+}
+
+function persist() {
+  if (!session.value) return
+  clearTimeout(debounceTimer)
+  // 使用 toRaw 转换为普通数组，避免 IPC 克隆错误
+  const plainAnswers = JSON.parse(JSON.stringify(toRaw(answers.value)))
+  api.savePracticeProgress(session.value.id, plainAnswers, elapsedMs.value).catch(() => {})
+}
+
+function debouncedPersist() {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(persist, 600)
+}
+
+watch(answers, debouncedPersist, { deep: true })
+
+onBeforeRouteLeave(() => {
+  persist()
+})
+
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  clearTimeout(debounceTimer)
+  persist()
+})
+
+/* ---- 交互 ---- */
+
+function onSelect(i, opt) {
+  answers.value[i] = opt
+}
+
+async function toggleFavorite(q) {
+  try {
+    const fav = await api.toggleFavorite(q.id)
+    const s = new Set(favorites.value)
+    if (fav) s.add(q.id)
+    else s.delete(q.id)
+    favorites.value = s
+    toast.success(fav ? '已收藏' : '已取消收藏')
+  } catch (err) {
+    toast.error('操作失败：' + (err.message || err))
+  }
+}
+
+function askSubmit() {
+  confirmSubmit.value = true
+}
+
+async function doSubmit() {
+  confirmSubmit.value = false
+  try {
+    await api.submitPractice(session.value.id, answers.value, elapsedMs.value)
+    router.push({ path: '/practice/result', query: { sessionId: session.value.id } })
+  } catch (err) {
+    toast.error('交卷失败：' + (err.message || err))
+  }
+}
+
+function leave() {
+  persist()
+  router.push(origin.value)
+}
+
+async function doAbandon() {
+  confirmAbandon.value = false
+  try {
+    await api.abandonPractice(session.value.id)
+    toast.success('已放弃本次练习，进度已清除')
+    router.replace(origin.value)
+  } catch (err) {
+    toast.error('操作失败：' + (err.message || err))
+  }
+}
+
+function askRemoveWrong(q) {
+  confirmRemoveWrong.value = q
+}
+
+async function doRemoveWrong() {
+  const q = confirmRemoveWrong.value
+  confirmRemoveWrong.value = null
+  try {
+    await api.removeWrong(q.id)
+    removedWrong.value = new Set([...removedWrong.value, q.id])
+    removedQuestionIds.add(q.id)
+    toast.success('已移出错题本')
+  } catch (err) {
+    toast.error('操作失败：' + (err.message || err))
+  }
+}
+
+function isRemoved(q) {
+  return removedWrong.value.has(q.id) || removedQuestionIds.has(q.id)
+}
+</script>
+
+<template>
+  <div class="page session-page">
+    <div class="session-topbar">
+      <button class="btn btn-text" title="保存进度并返回" @click="leave">← 返回</button>
+      <span class="session-timer">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l2.5 2.5" />
+          <path d="M9 2h6" />
+        </svg>
+        {{ displayTime }}
+      </span>
+      <h1 class="session-title">{{ session && session.title }}</h1>
+      <span class="session-count">{{ answeredCount }}/{{ session && session.total }}</span>
+      <button class="icon-btn" title="显示设置" @click="settingsOpen = true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09c0 .65.38 1.24.97 1.51.65.31 1.43.21 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.31.65.9 1.03 1.55 1.03H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      <button class="btn btn-primary" :disabled="!questions.length" @click="askSubmit">交卷</button>
+    </div>
+
+    <div v-if="loading" class="empty">加载中…</div>
+
+    <div v-else-if="!questions.length" class="empty">
+      <div class="empty-icon">🗒</div>
+      <div>本次练习没有可用的题目（题目可能已被删除）</div>
+    </div>
+
+    <div v-else class="session-body">
+      <QuestionCard
+        v-for="(q, i) in questions"
+        :key="q.id"
+        :question="q"
+        :index="i + 1"
+        :answer="answers[i]"
+        :is-favorite="favorites.has(q.id)"
+        :session-type="session.type"
+        :wrong-removed="isRemoved(q)"
+        @select="onSelect(i, $event)"
+        @favorite="toggleFavorite(q)"
+        @note="noteFor = q"
+        @remove-wrong="askRemoveWrong(q)"
+      />
+    </div>
+
+    <NoteEditorModal v-if="noteFor" :question-id="noteFor.id" @close="noteFor = null" />
+
+    <QuickSettingsModal
+      v-if="settingsOpen"
+      show-abandon
+      @close="settingsOpen = false"
+      @abandon="confirmAbandon = true"
+    />
+
+    <ConfirmDialog
+      v-if="confirmSubmit"
+      title="交卷"
+      :message="`已作答 ${answeredCount} / ${questions.length} 题，未作答 ${unAnsweredCount} 题。确认交卷？交卷后不可修改。`"
+      ok-text="确认交卷"
+      @confirm="doSubmit"
+      @close="confirmSubmit = false"
+    />
+
+    <ConfirmDialog
+      v-if="confirmAbandon"
+      title="放弃本次练习"
+      message="放弃后本次作答进度将被清除，确定放弃？"
+      danger
+      ok-text="放弃"
+      @confirm="doAbandon"
+      @close="confirmAbandon = false"
+    />
+
+    <ConfirmDialog
+      v-if="confirmRemoveWrong"
+      :title="`将第 ${questions.indexOf(confirmRemoveWrong) + 1} 题移出错题本？`"
+      message="移出后该题不再计入错题统计。"
+      ok-text="移除"
+      @confirm="doRemoveWrong"
+      @close="confirmRemoveWrong = null"
+    />
+  </div>
+</template>
+
+<style scoped>
+.session-page {
+  max-width: 860px;
+}
+.session-topbar {
+  position: sticky;
+  top: -1.4rem;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--bg);
+  padding: 1.1rem 0 0.9rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.session-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.6rem;
+}
+.session-title {
+  flex: 1;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-count {
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+</style>
