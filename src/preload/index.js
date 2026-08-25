@@ -59,7 +59,24 @@ const api = {
   // 授权：硬件信息采集与验签均在主进程，渲染进程只拿结果做展示
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code),
-  getLicenseStatus: () => ipcRenderer.invoke('license:status')
+  getLicenseStatus: () => ipcRenderer.invoke('license:status'),
+
+  // 版本更新：检查/下载/安装全部在主进程执行，公开产物仓库零认证
+  getUpdaterState: () => ipcRenderer.invoke('updater:getState'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  cancelDownload: () => ipcRenderer.invoke('updater:cancelDownload'),
+  openManualDownload: () => ipcRenderer.invoke('updater:openManualDownload'),
+  onUpdaterEvent: (callback) => {
+    const listener = (_e, payload) => callback(payload)
+    ipcRenderer.on('updater:state-changed', listener)
+    return () => ipcRenderer.removeListener('updater:state-changed', listener)
+  },
+  onUpdaterProgress: (callback) => {
+    const listener = (_e, payload) => callback(payload)
+    ipcRenderer.on('updater:download-progress', listener)
+    return () => ipcRenderer.removeListener('updater:download-progress', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

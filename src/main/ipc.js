@@ -4,6 +4,7 @@ const { parseExcel } = require('./excel')
 const { sanitizeHtml } = require('../shared/sanitize')
 const { saveImage, getImage } = require('./images')
 const { registerLicenseIpc } = require('./license')
+const { registerUpdaterIpc } = require('./updater')
 
 const now = () => Date.now()
 
@@ -715,6 +716,7 @@ function registerIpc() {
   registerSettingsHandlers()
   registerImageHandlers()
   registerLicenseIpc()
+  registerUpdaterIpc()
 }
 
 module.exports = { registerIpc }

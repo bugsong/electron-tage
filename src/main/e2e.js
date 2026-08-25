@@ -225,6 +225,39 @@ const ABOUT_CHECK = `
 `
 
 /**
+ * 版本更新块冒烟（开发模式/未打包下不触发真实更新链路）：
+ * 断言"版本更新"块存在、展示当前版本与"检查更新"按钮、未检查时无"最新版本"入口；
+ * 点击"检查更新"后界面提示"当前环境不支持更新"（spec 4.3-4）。
+ */
+const UPDATER_CHECK = `
+  // 版本更新块冒烟：块存在 → 当前版本 + 检查更新按钮 → 无最新版本入口 → 开发模式点击提示不支持
+  try {
+    location.hash = '#/about'
+    await wait(500)
+    const upBlock = [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('版本更新'))
+    const hasBlock = !!upBlock
+    const hasVersion = hasBlock && /v\\d+\\.\\d+\\.\\d+/.test(upBlock.innerText)
+    const hasBtn = hasBlock && !!upBlock.querySelector('button') && upBlock.innerText.includes('检查更新')
+    const noLatest = hasBlock && !upBlock.innerText.includes('最新版本')
+    const direct = await api.getUpdaterState()
+    const stateOk = direct && direct.ok && direct.status === 'idle' && /\\d+\\.\\d+\\.\\d+/.test(direct.currentVersion)
+
+    // 开发模式点击"检查更新"：提示"当前环境不支持更新"，不触发真实更新
+    let devBlocked = false
+    const btn = upBlock && upBlock.querySelector('button')
+    if (btn) {
+      btn.click()
+      await wait(600)
+      const toastHost = document.querySelector('.toast-host')
+      devBlocked = !!toastHost && toastHost.innerText.includes('当前环境不支持更新')
+    }
+    results.push('about-updater => ' + (hasBlock && hasVersion && hasBtn && noLatest && stateOk && devBlocked ? 'OK' : 'block=' + hasBlock + ' version=' + hasVersion + ' btn=' + hasBtn + ' noLatest=' + noLatest + ' state=' + stateOk + ' devBlocked=' + devBlocked))
+  } catch (err) {
+    results.push('about-updater => ERR ' + String(err).slice(0, 120))
+  }
+`
+
+/**
  * 普通版草纸冒烟：未激活时草纸无粗细/颜色/擦除方式设置、画笔固定红色、橡皮仅像素擦除。
  * 嵌入全量 UI_SCRIPT，也可用 COMATE_UI_SCOPE=paper 单独跑。
  */
@@ -963,6 +996,7 @@ ${PAPER_FREE_CHECK}
     results.push('settings-device-info => ERR ' + String(err).slice(0, 80))
   }
 ${ABOUT_CHECK}
+${UPDATER_CHECK}
 ${PAPER_PRO_CHECK}
   return results.join('\\n')
 })()
@@ -1028,6 +1062,7 @@ async function buildUiSmokeScript() {
     await wait(300)
   }
 ${ABOUT_CHECK}
+${UPDATER_CHECK}
 ${PAPER_PRO_CHECK}
   return results.join('\\n')
 })()

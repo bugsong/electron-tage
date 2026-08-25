@@ -10,14 +10,22 @@ const fs = require('node:fs')
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'comate-test-'))
 let userData = path.join(tmpRoot, 'userData')
 fs.mkdirSync(userData, { recursive: true })
+let packaged = false
 
 const origLoad = Module._load
 Module._load = function (request, ...args) {
   if (request === 'electron') {
     return {
       app: {
-        getPath: () => userData
-      }
+        getPath: () => userData,
+        getVersion: () => '0.1.0',
+        get isPackaged() {
+          return packaged
+        }
+      },
+      ipcMain: { handle: () => {} },
+      shell: { openExternal: async () => true },
+      BrowserWindow: { getAllWindows: () => [] }
     }
   }
   return origLoad.apply(this, [request, ...args])
@@ -30,4 +38,9 @@ function freshUserData() {
   return userData
 }
 
-module.exports = { userData: () => userData, freshUserData, tmpRoot }
+/** 切换 app.isPackaged（模拟打包/开发模式） */
+function setPackaged(v) {
+  packaged = Boolean(v)
+}
+
+module.exports = { userData: () => userData, freshUserData, tmpRoot, setPackaged }

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useToastStore } from '../stores/toast'
+import UpdateBlock from '../components/UpdateBlock.vue'
 
 const toast = useToastStore()
 
@@ -135,6 +136,7 @@ async function activate() {
         已解锁进阶版全部能力，以上金色功能现已可用
       </div>
     </div>
+    <UpdateBlock />
     <div class="st-about">题迹 · 仅本地使用 · 数据不出本机</div>
   </div>
 </template>
