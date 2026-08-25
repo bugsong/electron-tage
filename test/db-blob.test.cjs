@@ -72,6 +72,6 @@ test('数据库文件生成于 userData 目录', () => {
   const dir = freshUserData()
   const { initDb } = require('../src/main/db')
   initDb()
-  const dbFile = path.join(dir, 'comate.db')
-  assert.ok(fs.existsSync(dbFile), 'comate.db 应存在于 userData 目录')
+  const dbFile = path.join(dir, 'tage.db')
+  assert.ok(fs.existsSync(dbFile), 'tage.db 应存在于 userData 目录')
 })

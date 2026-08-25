@@ -165,6 +165,19 @@ function registerQuestionHandlers() {
     return { ok: true }
   })
 
+  // 批量删除（管理模式下勾选多条），事务执行，级联清理错题/收藏/笔记/草稿
+  ipcMain.handle('question:deleteMany', (e, ids) => {
+    const list = Array.isArray(ids) ? ids.filter((id) => Number.isFinite(Number(id))) : []
+    if (!list.length) return { ok: true, deleted: 0 }
+    const db = getDb()
+    const del = db.prepare('DELETE FROM questions WHERE id = ?')
+    const run = db.transaction((all) => {
+      for (const id of all) del.run(id)
+    })
+    run(list)
+    return { ok: true, deleted: list.length }
+  })
+
   // Excel 导入
   ipcMain.handle('dialog:pickExcel', async () => {
     const r = await dialog.showOpenDialog({
@@ -485,7 +498,7 @@ function registerPracticeHandlers() {
   ipcMain.handle('practice:getSession', (e, id) => getSession(id))
 
   ipcMain.handle('practice:start', (e, payload = {}) => {
-    const { type = 'special', title = '练多分', categoryIds = [], count = 20, wrongCategoryId = null } = payload
+    const { type = 'special', title = '练习', categoryIds = [], count = 20, wrongCategoryId = null } = payload
     const db = getDb()
     let ids = []
     if (type === 'wrong_review') {

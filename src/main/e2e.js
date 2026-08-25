@@ -123,9 +123,22 @@ const TEST_SCRIPT = `
     out.题目图引用 = /local-image:\\/\\//.test(imgQGet.stem)
     out.空选项题目 = JSON.stringify(imgQGet.options)
 
+    // 批量删除（题库管理模式）：保存后按 id 批量删除
+    const bdQ = await api.saveQuestion({
+      id: null,
+      categoryId: politics.id,
+      stem: 'E2E批量删除测试题',
+      options: ['甲', '乙', '丙', '丁'],
+      answer: 'A',
+      analysis: ''
+    })
+    const bdRes = await api.deleteQuestions([bdQ.id, 999999])
+    out.批量删除 = JSON.stringify(bdRes)
+    out.批量删除后 = (await api.listQuestions({ keyword: 'E2E批量删除测试题' })).total
+
     // ---- 数据位置迁移：迁到子目录 → 校验数据完整 → 迁回原位置 ----
     const oldDbPath = await api.getDbPath()
-    const dbBase = oldDbPath.replace(/[\\\\/]comate\.db$/, '')
+    const dbBase = oldDbPath.replace(/[\\\\/]tage\.db$/, '')
     const qTotalBefore = (await api.listQuestions({})).total
     const wrongBefore = (await api.listWrong({})).length
     const r1 = await api.moveDb(dbBase + '/migrated')
@@ -159,7 +172,8 @@ const UI_SCRIPT = `
       location.hash = '#/practice'
       await wait(400)
       const main = document.querySelector('.app-main')
-      if (main && main.innerText.includes('练多分')) return true
+      const tag = main && main.querySelector('.page-title-tag')
+      if (tag && tag.innerText.includes('练习')) return true
     }
     return false
   }
@@ -171,7 +185,7 @@ const UI_SCRIPT = `
     const main = document.querySelector('.app-main')
     results.push(r + ' => ' + (main ? main.innerText.replace(/\\n+/g, ' ').slice(0, 50) : 'NO MAIN'))
   }
-  // 练多分进度条冒烟：一级分类渲染进度条，展开后子分类也有进度条
+  // 练习进度条冒烟：一级分类渲染进度条，展开后子分类也有进度条
   try {
     location.hash = '#/practice'
     await wait(600)
@@ -221,6 +235,58 @@ const UI_SCRIPT = `
   } else {
     results.push('rte-editor => NO_ADD_BUTTON')
   }
+
+  // 题库冒烟：标题「题库」、每页输入、分页按钮、管理模式（勾选/全选/批量删除二次确认）
+  try {
+    // 先关闭可能遗留的弹窗（新增题目），避免遮挡
+    const openModalClose = [...document.querySelectorAll('.modal-footer button, .modal-header button')].find(
+      (b) => b.innerText.includes('取消') || b.innerText.includes('关闭')
+    )
+    if (openModalClose) {
+      openModalClose.click()
+      await wait(400)
+    }
+    location.hash = '#/questions'
+    await wait(800)
+    const titleTag = document.querySelector('.page-title-tag')
+    const sizeInput = document.querySelector('.qm-size-input')
+    const pageInputEl = document.querySelector('.qm-page-input')
+    const pagerBtns = document.querySelectorAll('.qm-pager .btn').length
+    let manageOk = 'NO_MANAGE_BTN'
+    const manageBtn = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === '管理')
+    if (manageBtn) {
+      manageBtn.click()
+      await wait(400)
+      const checks = document.querySelectorAll('.qm-row .qm-check').length
+      const manageBar = document.querySelector('.qm-manage-bar')
+      if (checks > 0 && manageBar) {
+        const allChk = manageBar.querySelector('.qm-check-all input')
+        if (allChk) allChk.click()
+        await wait(200)
+        const delBtn = manageBar.querySelector('button.btn-danger')
+        if (delBtn && !delBtn.disabled) {
+          delBtn.click()
+          await wait(400)
+          const confirmTitle = [...document.querySelectorAll('.modal-title')].some((t) => t.innerText.includes('批量删除'))
+          manageOk = confirmTitle ? 'OK' : 'NO_CONFIRM'
+          const cancelBtn = [...document.querySelectorAll('.modal-footer button')].find((b) => b.innerText.includes('取消'))
+          if (cancelBtn) cancelBtn.click()
+          await wait(300)
+        } else {
+          manageOk = 'NO_SELECTED'
+        }
+      } else {
+        manageOk = 'NO_CHECKS'
+      }
+      const exitBtn = [...document.querySelectorAll('button')].find((b) => b.innerText.trim() === '管理')
+      if (exitBtn) exitBtn.click()
+      await wait(300)
+    }
+    results.push('bank-page => ' + (titleTag && titleTag.innerText === '题库' ? 'OK' : 'TITLE=' + (titleTag ? titleTag.innerText : '')) + ' size=' + (sizeInput ? 'Y' : 'N') + ' pager=' + pagerBtns + ' pageInput=' + (pageInputEl ? 'Y' : 'N') + ' manage=' + manageOk)
+  } catch (err) {
+    results.push('bank-page => ERR ' + String(err).slice(0, 80))
+  }
+
 
   // 草纸工具栏冒烟：首次打开应渲染工具栏按钮
   try {

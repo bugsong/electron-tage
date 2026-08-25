@@ -21,11 +21,11 @@ function toggleCollapsed() {
 
 const items = [
   { to: '/home', label: '首页', icon: 'home' },
-  { to: '/practice', label: '练多分', icon: 'practice' },
+  { to: '/practice', label: '练习', icon: 'practice' },
   { to: '/wrong', label: '错题', icon: 'wrong' },
   { to: '/notes', label: '笔记', icon: 'notes' },
   { to: '/favorites', label: '收藏', icon: 'favorites' },
-  { to: '/questions', label: '题目管理', icon: 'questions' },
+  { to: '/questions', label: '题库', icon: 'questions' },
   { to: '/settings', label: '设置', icon: 'settings' }
 ]
 

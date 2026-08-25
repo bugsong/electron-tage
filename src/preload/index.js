@@ -9,6 +9,7 @@ const api = {
   getQuestion: (id) => ipcRenderer.invoke('question:get', id),
   saveQuestion: (payload) => ipcRenderer.invoke('question:save', payload),
   deleteQuestion: (id) => ipcRenderer.invoke('question:delete', id),
+  deleteQuestions: (ids) => ipcRenderer.invoke('question:deleteMany', ids),
   pickExcel: () => ipcRenderer.invoke('dialog:pickExcel'),
   parseExcel: (filePath) => ipcRenderer.invoke('excel:parse', filePath),
   importRows: (rows) => ipcRenderer.invoke('question:importRows', rows),

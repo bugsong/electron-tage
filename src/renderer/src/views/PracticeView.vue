@@ -46,7 +46,7 @@ async function goPractice(categoryId, name) {
   try {
     const r = await api.startPractice({
       type: 'special',
-      title: `练多分（${name}）`,
+      title: `练习（${name}）`,
       categoryIds: [categoryId],
       count: 20
     })
@@ -80,7 +80,7 @@ function visibleChildren(node) {
 <template>
   <div class="page">
     <div class="page-header">
-      <span class="page-title-tag">练多分</span>
+      <span class="page-title-tag">练习</span>
       <button class="btn btn-text" @click="composeOpen = true">自定义刷题</button>
     </div>
 
@@ -88,7 +88,7 @@ function visibleChildren(node) {
 
     <div v-else-if="!tree.length" class="empty">
       <div class="empty-icon">📂</div>
-      <div>还没有任何分类，请先到「题目管理」导入题目</div>
+      <div>还没有任何分类，请先到「题库」导入题目</div>
     </div>
 
     <div v-else class="card ptree">

@@ -5,6 +5,10 @@ const { app } = require('electron')
 // v13 起为 N-API 实现，node 与 Electron ABI 通用，无需 electron-rebuild。
 const Database = require('better-sqlite3')
 
+/** 数据库文件名（曾用名 comate.db，已改名 tage.db） */
+const DB_FILE = 'tage.db'
+const LEGACY_DB_FILE = 'comate.db'
+
 let db = null
 
 function getDb() {
@@ -29,7 +33,25 @@ function configuredDataDir() {
 }
 
 function dbPath() {
-  return path.join(configuredDataDir(), 'comate.db')
+  return path.join(configuredDataDir(), DB_FILE)
+}
+
+/** 旧库文件名 comate.db → tage.db 的一次性重命名迁移（保留既有数据） */
+function migrateLegacyDbFile(dir) {
+  const next = path.join(dir, DB_FILE)
+  if (fs.existsSync(next)) return
+  const main = path.join(dir, LEGACY_DB_FILE)
+  if (!fs.existsSync(main)) return
+  fs.renameSync(main, next) // 主库文件必须迁移成功，否则抛出错误阻止启动空库
+  for (const suffix of ['-wal', '-shm']) {
+    const old = path.join(dir, LEGACY_DB_FILE + suffix)
+    if (!fs.existsSync(old)) continue
+    try {
+      fs.renameSync(old, path.join(dir, DB_FILE + suffix))
+    } catch {
+      /* WAL/SHM 单文件失败不阻断，SQLite 会自动重建 */
+    }
+  }
 }
 
 /**
@@ -47,7 +69,7 @@ async function moveDb(newDir, opts = {}) {
 
   const targetDir = path.resolve(newDir.trim())
   const current = path.resolve(dbPath())
-  const target = path.join(targetDir, 'comate.db')
+  const target = path.join(targetDir, DB_FILE)
   // Windows 路径不区分大小写，统一小写比较
   const samePath =
     process.platform === 'win32'
@@ -63,8 +85,8 @@ async function moveDb(newDir, opts = {}) {
     return {
       status: 'need_confirm',
       message: sourceExists
-        ? '目标文件夹已存在 comate.db 数据库文件，迁移将覆盖该文件。\n建议选择空文件夹，确认后将继续。'
-        : '目标文件夹已存在 comate.db 数据库文件，确认后将打开并使用该数据库。',
+        ? `目标文件夹已存在 ${DB_FILE} 数据库文件，迁移将覆盖该文件。\n建议选择空文件夹，确认后将继续。`
+        : `目标文件夹已存在 ${DB_FILE} 数据库文件，确认后将打开并使用该数据库。`,
       currentPath: current,
       newPath: target,
       sourceExists,
@@ -103,7 +125,7 @@ async function moveDb(newDir, opts = {}) {
 
   // 迁移成功后清理原位置文件（含 WAL/SHM 残留）
   if (sourceExists) {
-    for (const f of ['comate.db', 'comate.db-wal', 'comate.db-shm']) {
+    for (const f of [DB_FILE, DB_FILE + '-wal', DB_FILE + '-shm']) {
       try { fs.unlinkSync(path.join(oldDir, f)) } catch {}
     }
   }
@@ -117,8 +139,9 @@ async function moveDb(newDir, opts = {}) {
 }
 
 function initDb() {
-  const dir = app.getPath('userData')
+  const dir = configuredDataDir()
   fs.mkdirSync(dir, { recursive: true })
+  migrateLegacyDbFile(dir)
   db = new Database(dbPath())
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -216,7 +239,7 @@ function createSchema() {
 
 /**
  * 分类结构（一级 + 二级）。
- * 一级分类在练多分界面展开时，前端会在最前面渲染一个虚拟「全部」，
+ * 一级分类在练习界面展开时，前端会在最前面渲染一个虚拟「全部」，
  * 因此这里不存储「全部」，只存储真实分类。
  */
 const CATEGORY_SCHEMA = [
