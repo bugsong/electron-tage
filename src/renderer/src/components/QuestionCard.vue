@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { sanitizeHtml } from '../utils/sanitize'
-import PaperCanvas from './PaperCanvas.vue'
+import PaperCanvas, { clearSessionDrafts } from './PaperCanvas.vue'
 import InlineNoteEditor from './InlineNoteEditor.vue'
 
 const props = defineProps({
@@ -12,7 +12,9 @@ const props = defineProps({
   sessionType: { type: String, default: 'special' },
   showResult: { type: Boolean, default: false },
   isCorrect: { type: Boolean, default: null },
-  wrongRemoved: { type: Boolean, default: false }
+  wrongRemoved: { type: Boolean, default: false },
+  // 草纸会话内草稿作用域（普通版不落库，交卷后清除）
+  paperScope: { type: String, default: '' }
 })
 
 const emit = defineEmits(['select', 'favorite', 'remove-wrong'])
@@ -21,12 +23,15 @@ const LETTERS = ['A', 'B', 'C', 'D']
 const paperOpen = ref(false)
 const noteOpen = ref(false)
 
-// 切换题目（回看页上一题/下一题复用同一实例）时，自动关闭草纸与笔记覆层，避免带到下一题
+// 切换题目（回看页上一题/下一题复用同一实例）时，自动关闭草纸与笔记覆层，避免带到下一题；
+// 同时清除本次视图 scope 内的临时笔迹（普通版内存缓存），使重新打开的草纸为空白。
+// 该 watch 只在单实例复用场景触发（练习页每题独立实例、question 不变），进阶版笔迹在库中不受影响。
 watch(
   () => props.question.id,
   () => {
     paperOpen.value = false
     noteOpen.value = false
+    if (props.paperScope) clearSessionDrafts(props.paperScope)
   }
 )
 
@@ -63,6 +68,7 @@ function togglePaper() {
     <PaperCanvas
       v-if="paperOpen"
       :question-id="question.id"
+      :scope="paperScope"
       :open="paperOpen"
       @close="paperOpen = false"
     />

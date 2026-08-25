@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api'
 import { sanitizeHtml } from '../utils/sanitize'
 import QuestionCard from '../components/QuestionCard.vue'
+import { clearSessionDrafts } from '../components/PaperCanvas.vue'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
@@ -42,6 +43,14 @@ const myCorrect = computed(() =>
 )
 
 const safeAnalysis = computed(() => (current.value ? sanitizeHtml(current.value.analysis || '') : ''))
+
+// 本次回看的草纸作用域：与练习界面的 session scope 同源，统一由 clearSessionDrafts 管理临时笔迹
+const paperScope = computed(() => 'review:' + (session.value ? session.value.id : (route.query.mode || 'view')))
+
+// 离开回看页时清除本次回看的临时笔迹（普通版内存），与练习界面「交卷/放弃即清」保持同一套草纸清理逻辑
+onBeforeRouteLeave(() => {
+  clearSessionDrafts(paperScope.value)
+})
 
 async function load() {
   if (isWrongMode.value) {
@@ -206,6 +215,7 @@ async function toggleFavorite(q) {
         :session-type="isWrongMode || isNotesMode || isFavMode ? 'wrong_review' : session.type"
         :show-result="true"
         :is-correct="myCorrect"
+        :paper-scope="paperScope"
         @favorite="toggleFavorite(current)"
       />
 

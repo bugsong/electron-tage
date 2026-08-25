@@ -190,7 +190,7 @@ function applyMoveResult(info) {
       @close="pendingMove = null"
     />
 
-    <div class="st-about">题迹 · 仅本机使用 · 数据不出本机</div>
+    <!-- <div class="st-about">题迹 · 仅本地使用 · 数据不出本机</div> -->
   </div>
 </template>
 
@@ -272,11 +272,5 @@ function applyMoveResult(info) {
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: text;
-}
-.st-about {
-  text-align: center;
-  color: var(--text-2);
-  font-size: 0.8rem;
-  margin-top: 1.2rem;
 }
 </style>

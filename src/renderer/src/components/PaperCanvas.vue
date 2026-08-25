@@ -1,3 +1,16 @@
+<script>
+// 普通版（未激活进阶版）的会话内草稿缓存：只存内存不落库，
+// key = `${scope}:${questionId}`，交卷/放弃/离开时由使用方调用 clearSessionDrafts(scope) 清除
+const sessionDraftCache = new Map()
+
+export function clearSessionDrafts(scope) {
+  const prefix = scope ? scope + ':' : ''
+  for (const k of sessionDraftCache.keys()) {
+    if (k.startsWith(prefix)) sessionDraftCache.delete(k)
+  }
+}
+</script>
+
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, watch, toRaw } from 'vue'
 import { api } from '../api'
@@ -5,7 +18,9 @@ import { useToastStore } from '../stores/toast'
 
 const props = defineProps({
   questionId: { type: [Number, String], required: true },
-  open: { type: Boolean, default: false }
+  open: { type: Boolean, default: false },
+  // 会话内草稿缓存作用域（普通版不落库）：练习传 session 前缀，交卷后清除
+  scope: { type: String, default: '' }
 })
 const emit = defineEmits(['close'])
 const toast = useToastStore()
@@ -36,6 +51,35 @@ const eraserSize = ref('normal')
 const eraserMode = ref('pixel') // 'pixel' 像素擦除 | 'stroke' 整笔擦除
 const drawing = ref(null)
 const saved = ref(false)
+
+// 进阶版判定：未激活时按普通版削弱（固定红色画笔 / 固定像素橡皮 / 不展示设置项 / 笔迹不落库）
+const pro = ref(true)
+// 普通版固定参数
+const FREE_PEN_COLOR = '#e5484d'
+const FREE_PEN_SIZE = 'normal'
+const FREE_ERASER_SIZE = 'normal'
+const FREE_ERASER_MODE = 'pixel'
+
+async function loadLicense() {
+  try {
+    const s = await api.getLicenseStatus()
+    pro.value = !!(s && s.activated)
+  } catch {
+    pro.value = true // 授权状态读取失败时按进阶版处理，避免误削弱
+  }
+  if (pro.value) {
+    await loadToolPrefs()
+  } else {
+    // 普通版固定参数，不读取 / 保存上次状态
+    penColor.value = FREE_PEN_COLOR
+    penSize.value = FREE_PEN_SIZE
+    eraserSize.value = FREE_ERASER_SIZE
+    eraserMode.value = FREE_ERASER_MODE
+  }
+}
+
+/** 普通版会话内草稿缓存 key */
+const draftKey = () => (props.scope ? props.scope + ':' : '') + props.questionId
 
 function penSizePx() {
   const s = PEN_SIZES.find((s) => s.key === penSize.value)
@@ -222,6 +266,11 @@ function cloneForIPC(arr) {
 }
 
 async function persist() {
+  if (!pro.value) {
+    // 普通版：仅保存到会话内存，不落库（交卷后由使用方 clearSessionDrafts 清除）
+    sessionDraftCache.set(draftKey(), cloneForIPC(strokes.value))
+    return
+  }
   try {
     await api.saveDraft(props.questionId, cloneForIPC(strokes.value))
     saved.value = true
@@ -252,7 +301,8 @@ function clear() {
   strokes.value = []
   redoStack.value = []
   redraw()
-  api.clearDraft(props.questionId).catch(() => {})
+  if (pro.value) api.clearDraft(props.questionId).catch(() => {})
+  else sessionDraftCache.delete(draftKey())
   toast.success('草稿已清空')
 }
 
@@ -270,6 +320,12 @@ function onKey(e) {
 }
 
 async function loadDraft() {
+  if (!pro.value) {
+    // 普通版：只恢复本次会话内存中的笔迹，不读取数据库
+    strokes.value = sessionDraftCache.get(draftKey()) || []
+    redraw()
+    return
+  }
   try {
     const paths = await api.getDraft(props.questionId)
     strokes.value = Array.isArray(paths)
@@ -282,7 +338,7 @@ async function loadDraft() {
 }
 
 onMounted(async () => {
-  await loadToolPrefs()
+  await loadLicense()
   await nextTick()
   if (!canvasRef.value) return
   resize()
@@ -352,8 +408,8 @@ watch(() => props.open, async (v) => {
         </svg>
       </button>
 
-      <!-- 画笔设置：粗细 / 颜色 -->
-      <div v-if="tool === 'pen'" class="tool-settings">
+      <!-- 画笔设置：粗细 / 颜色（进阶版专属） -->
+      <div v-if="pro && tool === 'pen'" class="tool-settings">
         <div class="ts-label">粗细</div>
         <div class="ts-row">
           <button
@@ -381,8 +437,8 @@ watch(() => props.open, async (v) => {
         </div>
       </div>
 
-      <!-- 橡皮设置：粗细 / 擦除方式 -->
-      <div v-else-if="tool === 'eraser'" class="tool-settings">
+      <!-- 橡皮设置：粗细 / 擦除方式（进阶版专属） -->
+      <div v-else-if="pro && tool === 'eraser'" class="tool-settings">
         <div class="ts-label">粗细</div>
         <div class="ts-row">
           <button

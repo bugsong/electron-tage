@@ -4,6 +4,7 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api'
 import { fmtDuration } from '../utils/format'
 import QuestionCard from '../components/QuestionCard.vue'
+import { clearSessionDrafts } from '../components/PaperCanvas.vue'
 import QuickSettingsModal from '../components/QuickSettingsModal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useToastStore } from '../stores/toast'
@@ -138,6 +139,8 @@ async function doSubmit() {
     // 转换为普通数组，避免 IPC 克隆错误
     const plainAnswers = JSON.parse(JSON.stringify(toRaw(answers.value)))
     await api.submitPractice(session.value.id, plainAnswers, elapsedMs.value)
+    // 普通版：交卷后清除本次会话的内存笔迹
+    clearSessionDrafts('session:' + session.value.id)
     router.push({ path: '/practice/result', query: { sessionId: session.value.id } })
   } catch (err) {
     toast.error('交卷失败：' + (err.message || err))
@@ -153,6 +156,8 @@ async function doAbandon() {
   confirmAbandon.value = false
   try {
     await api.abandonPractice(session.value.id)
+    // 普通版：放弃后同样清除本次会话的内存笔迹
+    clearSessionDrafts('session:' + session.value.id)
     toast.success('已放弃本次练习，进度已清除')
     router.replace(origin.value)
   } catch (err) {
@@ -222,6 +227,7 @@ function isRemoved(q) {
         :is-favorite="favorites.has(q.id)"
         :session-type="session.type"
         :wrong-removed="isRemoved(q)"
+        :paper-scope="'session:' + session.id"
         @select="onSelect(i, $event)"
         @favorite="toggleFavorite(q)"
         @remove-wrong="askRemoveWrong(q)"

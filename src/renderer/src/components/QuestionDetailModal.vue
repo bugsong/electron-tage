@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '../api'
 import Modal from './Modal.vue'
-import PaperCanvas from './PaperCanvas.vue'
+import PaperCanvas, { clearSessionDrafts } from './PaperCanvas.vue'
 import InlineNoteEditor from './InlineNoteEditor.vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import { plainText } from '../utils/format'
@@ -54,10 +54,17 @@ function optionClass(letter) {
   }
   return cls
 }
+
+// 关闭弹窗前清除本次查看的临时笔迹（普通版内存），与回看/练习界面保持同一套草纸清理逻辑；
+// 进阶版笔迹在库中不受影响，下次打开仍可恢复
+function close() {
+  clearSessionDrafts('detail:' + props.question.id)
+  emit('close')
+}
 </script>
 
 <template>
-  <Modal title="题目详情" width="80%" @close="emit('close')">
+  <Modal title="题目详情" width="80%" @close="close">
     <div class="d-question">
       <div class="d-meta">
         <span class="tag tag-primary">单选题</span>
@@ -95,13 +102,14 @@ function optionClass(letter) {
       <button class="btn" @click="paperOpen = true">草纸</button>
       <button class="btn" :class="{ active: noteOpen }" @click="noteOpen = !noteOpen">笔记</button>
       <button v-if="showRemove" class="btn btn-danger" @click="emit('remove')">移出错题本</button>
-      <button class="btn btn-primary" @click="emit('close')">关闭</button>
+      <button class="btn btn-primary" @click="close">关闭</button>
     </template>
 
     <PaperCanvas
       v-if="paperOpen"
       :open="true"
       :question-id="question.id"
+      :scope="'detail:' + question.id"
       :question-no="question.no || ''"
       @close="paperOpen = false"
     />

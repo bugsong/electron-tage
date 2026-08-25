@@ -224,6 +224,124 @@ const ABOUT_CHECK = `
   }
 `
 
+/**
+ * 普通版草纸冒烟：未激活时草纸无粗细/颜色/擦除方式设置、画笔固定红色、橡皮仅像素擦除。
+ * 嵌入全量 UI_SCRIPT，也可用 COMATE_UI_SCOPE=paper 单独跑。
+ */
+const PAPER_FREE_CHECK = `
+  // 普通版草纸冒烟：无设置面板、画笔固定红色、橡皮仅像素擦除
+  try {
+    const tree = await api.categoryTree()
+    const top = tree[0]
+    const sid = await api.startPractice({ type: 'special', title: '普通版草纸测试', categoryIds: [top.id], count: 1 })
+    location.hash = '#/practice/session?sessionId=' + sid.id
+    await wait(1200)
+    const card = document.querySelector('.q-card')
+    const pbtn = card && card.querySelector('.q-head-right button[title="草纸"]')
+    if (pbtn) {
+      pbtn.click()
+      await wait(800)
+      const tools = card.querySelector('.paper-tools')
+      const settingsHidden = tools && !tools.querySelector('.tool-settings')
+      // 画笔固定红色：画一笔并读取像素（#e5484d）
+      let penRed = false
+      const penBtn = tools && [...tools.querySelectorAll('.tool-btn')].find((b) => b.title === '画笔')
+      if (penBtn) {
+        penBtn.click()
+        await wait(150)
+        const cv = card.querySelector('.paper-canvas')
+        const rect = cv.getBoundingClientRect()
+        const dpr = window.devicePixelRatio || 1
+        const mk = (type, x, y) => cv.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: rect.left + x, clientY: rect.top + y }))
+        const y0 = 200, x0 = 320
+        mk('mousedown', x0, y0)
+        for (let i = 1; i <= 6; i++) { mk('mousemove', x0 + i * 8, y0); await wait(25) }
+        mk('mouseup', x0 + 48, y0)
+        await wait(200)
+        const px = cv.getContext('2d').getImageData(Math.round((x0 + 24) * dpr), Math.round(y0 * dpr), 1, 1).data
+        penRed = px[3] > 30 && px[0] > 180 && px[1] < 120 && px[2] < 130
+      }
+      // 橡皮仅像素擦除：无「整笔擦除」选项
+      let pixelOnly = false
+      const eraserBtn = tools && [...tools.querySelectorAll('.tool-btn')].find((b) => b.title === '橡皮')
+      if (eraserBtn) {
+        eraserBtn.click()
+        await wait(150)
+        pixelOnly = ![...tools.querySelectorAll('.ts-btn')].some((b) => b.innerText.trim() === '整笔擦除')
+      }
+      results.push('paper-free => ' + (settingsHidden && penRed && pixelOnly ? 'OK' : 'settings=' + (settingsHidden ? 'hidden' : 'SHOWN') + ' red=' + penRed + ' pixelOnly=' + pixelOnly))
+      const exitBtn = tools && tools.querySelector('.tool-btn.exit')
+      if (exitBtn) exitBtn.click()
+      await wait(300)
+    } else {
+      results.push('paper-free => NO_PAPER_BTN')
+    }
+    try { await api.abandonPractice(sid.id) } catch {}
+  } catch (err) {
+    results.push('paper-free => ERR ' + String(err).slice(0, 120))
+  }
+`
+
+/**
+ * 进阶版草纸冒烟：激活后草纸展示粗细/颜色/擦除方式设置，整笔擦除可用（拖影自动清除）。
+ * 嵌入全量 UI_SCRIPT（紧随关于页激活之后），也可用 COMATE_UI_SCOPE=about 与关于页一起跑。
+ */
+const PAPER_PRO_CHECK = `
+  // 进阶版草纸冒烟：设置面板出现、整笔擦除拖影清除
+  try {
+    const tree = await api.categoryTree()
+    const top = tree[0]
+    const sid = await api.startPractice({ type: 'special', title: '进阶版草纸测试', categoryIds: [top.id], count: 1 })
+    location.hash = '#/practice/session?sessionId=' + sid.id
+    await wait(1200)
+    const card = document.querySelector('.q-card')
+    const pbtn = card && card.querySelector('.q-head-right button[title="草纸"]')
+    if (pbtn) {
+      pbtn.click()
+      await wait(800)
+      const tools = card.querySelector('.paper-tools')
+      const settingsShown = !!(tools && tools.querySelector('.tool-settings'))
+      const swatches = tools ? tools.querySelectorAll('.ts-swatch').length : 0
+      const eraserBtn = tools && [...tools.querySelectorAll('.tool-btn')].find((b) => b.title === '橡皮')
+      if (eraserBtn) eraserBtn.click()
+      await wait(150)
+      const modeBtns = tools ? tools.querySelectorAll('.ts-mode').length : 0
+      // 整笔擦除：空白处划过后拖影应自动清除（画布上不残留蓝色高亮像素）
+      let trailOk = false
+      const strokeBtn = tools && [...tools.querySelectorAll('.ts-btn')].find((b) => b.innerText.trim() === '整笔擦除')
+      if (strokeBtn) {
+        strokeBtn.click()
+        await wait(150)
+        const cv = card.querySelector('.paper-canvas')
+        const rect = cv.getBoundingClientRect()
+        const dpr = window.devicePixelRatio || 1
+        const mk = (type, x, y) => cv.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: rect.left + x, clientY: rect.top + y }))
+        const path = [[24, 24], [70, 34], [120, 44]]
+        mk('mousedown', path[0][0], path[0][1])
+        for (let i = 1; i < path.length; i++) { mk('mousemove', path[i][0], path[i][1]); await wait(30) }
+        mk('mouseup', path[path.length - 1][0], path[path.length - 1][1])
+        await wait(250)
+        const cctx = cv.getContext('2d')
+        let blue = 0
+        for (const [x, y] of path) {
+          const d = cctx.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data
+          if (d[3] > 20 && d[2] > d[0] + 40 && d[2] > 120) blue++
+        }
+        trailOk = blue === 0
+      }
+      results.push('paper-pro-options => ' + (settingsShown && swatches > 0 && modeBtns >= 2 && trailOk ? 'OK(swatches=' + swatches + ' modes=' + modeBtns + ')' : 'settings=' + (settingsShown ? 'Y' : 'N') + ' swatches=' + swatches + ' modes=' + modeBtns + ' trail=' + trailOk))
+      const exitBtn = tools && tools.querySelector('.tool-btn.exit')
+      if (exitBtn) exitBtn.click()
+      await wait(300)
+    } else {
+      results.push('paper-pro-options => NO_PAPER_BTN')
+    }
+    try { await api.abandonPractice(sid.id) } catch {}
+  } catch (err) {
+    results.push('paper-pro-options => ERR ' + String(err).slice(0, 120))
+  }
+`
+
 const UI_SCRIPT = `
 (async () => {
   const api = window.api
@@ -441,7 +559,8 @@ const UI_SCRIPT = `
             }
             results.push('eraser-trail-clear => ' + (blue === 0 ? 'OK' : 'TRAIL_LEFT(' + blue + ')'))
           } else {
-            results.push('eraser-trail-clear => NO_MODE_BTN')
+            // 普通版无「整笔擦除」选项（进阶版专属），仅像素擦除
+            results.push('eraser-trail-clear => FREE_PIXEL_ONLY')
           }
         } else {
           results.push('eraser-trail-clear => NO_ERASER_BTN')
@@ -470,6 +589,7 @@ const UI_SCRIPT = `
         results.push('paper-2nd-open => ' + (tools1 ? 'OK(' + tools1.querySelectorAll('.tool-btn').length + 'btns' + (outside1 ? '' : '/OVERLAPS_CARD') + ')' : 'TOOLBAR_MISSING'))
       }
     }
+${PAPER_FREE_CHECK}
 
     // 编辑回显冒烟：打开含图题目的编辑弹窗，题干富文本应回显图片
     const echoStem = '编辑回显测试' + Date.now()
@@ -843,6 +963,7 @@ const UI_SCRIPT = `
     results.push('settings-device-info => ERR ' + String(err).slice(0, 80))
   }
 ${ABOUT_CHECK}
+${PAPER_PRO_CHECK}
   return results.join('\\n')
 })()
 `
@@ -887,10 +1008,11 @@ async function buildTestActivationCode() {
   return Buffer.from(meta, 'utf8').toString('base64') + '|' + sig.toString('base64')
 }
 
-/** 组装冒烟脚本：默认全量 UI_SCRIPT；COMATE_UI_SCOPE=about 时仅跑关于页授权检查 */
+/** 组装冒烟脚本：默认全量 UI_SCRIPT；COMATE_UI_SCOPE 支持按功能局部跑 */
 async function buildUiSmokeScript() {
   const testCode = await buildTestActivationCode()
-  if (process.env.COMATE_UI_SCOPE === 'about') {
+  const scope = process.env.COMATE_UI_SCOPE
+  if (scope === 'about') {
     return `
 (async () => {
   const api = window.api
@@ -906,9 +1028,29 @@ async function buildUiSmokeScript() {
     await wait(300)
   }
 ${ABOUT_CHECK}
+${PAPER_PRO_CHECK}
   return results.join('\\n')
 })()
 `.replace('__TEST_ACTIVATION_CODE__', testCode)
+  }
+  if (scope === 'paper') {
+    return `
+(async () => {
+  const api = window.api
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+  const results = []
+  location.hash = '#/home'
+  await wait(800)
+  for (let i = 0; i < 30; i++) {
+    const main = document.querySelector('.app-main')
+    const tag = main && main.querySelector('.page-title-tag')
+    if (tag && tag.innerText.includes('首页')) break
+    await wait(300)
+  }
+${PAPER_FREE_CHECK}
+  return results.join('\\n')
+})()
+`
   }
   return UI_SCRIPT.replace('__TEST_ACTIVATION_CODE__', testCode)
 }

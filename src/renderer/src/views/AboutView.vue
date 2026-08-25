@@ -135,6 +135,7 @@ async function activate() {
         已解锁进阶版全部能力，以上金色功能现已可用
       </div>
     </div>
+    <div class="st-about">题迹 · 仅本地使用 · 数据不出本机</div>
   </div>
 </template>
 
@@ -158,6 +159,13 @@ async function activate() {
 .st-desc-note {
   margin: 0.8rem 0 0;
   font-size: 0.8rem;
+}
+
+.st-about {
+  text-align: center;
+  color: var(--text-2);
+  font-size: 0.8rem;
+  margin-top: 1.2rem;
 }
 
 /* 授权输入区 */
