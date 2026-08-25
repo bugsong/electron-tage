@@ -274,3 +274,50 @@ test('getState 合并持久化记录：按实际版本比较判定，避免已�
   assert.equal(s.status, 'update-available', '持久化版本高于当前版本时应判为有新版本')
   assert.equal(s.latestVersion, '0.2.0')
 })
+
+test('getState 合并出新版本后状态机同步，download 不再返回 not-available', async () => {
+  freshUserData()
+  const { initDb, getDb } = require('../src/main/db')
+  initDb()
+  useMockUpdater()
+
+  // 持久化一条高于当前版本的检查记录，模拟启动后从持久化恢复"有新版本"
+  getDb()
+    .prepare(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    )
+    .run(
+      'updater.lastCheck',
+      JSON.stringify({ status: 'update-available', latestVersion: '0.2.0', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
+    )
+  _test.reset()
+  const s = _test.getState()
+  assert.equal(s.status, 'update-available')
+
+  // 状态机应已同步到 update-available，download 直接进入下载而非 not-available
+  const { download } = require('../src/main/updater')
+  const r = await download()
+  assert.equal(r.ok, true)
+  assert.equal(_test.state.status, 'downloading')
+})
+
+test('error 状态下重试不受检查间隔限制', async () => {
+  freshUserData()
+  const { initDb } = require('../src/main/db')
+  initDb()
+  const mock = useMockUpdater()
+  await bindListeners(mock)
+
+  // 制造 error 状态（校验失败）
+  mock.emit('error', new Error('sha512 integrity check failed'))
+  assert.equal(_test.state.status, 'error')
+  assert.equal(_test.state.errorReason, 'verify-failed')
+
+  // 模拟刚检查过（间隔内），重试应跳过间隔立即执行
+  _test.state.lastCheckAt = Date.now()
+  const { check } = require('../src/main/updater')
+  const rr = await check()
+  assert.equal(rr.ok, true, 'error 状态下重试应跳过间隔立即执行')
+  assert.equal(_test.state.status, 'checking')
+})

@@ -20,9 +20,24 @@ const detailExpanded = ref(false)
 const checking = ref(false)
 const downloading = ref(false)
 const installNotice = ref(false)
+const retryCooldown = ref(0)
 
 let unsubscribeEvent = null
 let unsubscribeProgress = null
+let cooldownTimer = null
+
+function startRetryCooldown() {
+  retryCooldown.value = 10
+  if (cooldownTimer) clearInterval(cooldownTimer)
+  cooldownTimer = setInterval(() => {
+    retryCooldown.value -= 1
+    if (retryCooldown.value <= 0) {
+      retryCooldown.value = 0
+      clearInterval(cooldownTimer)
+      cooldownTimer = null
+    }
+  }, 1000)
+}
 
 const versionText = computed(() => (currentVersion.value ? `v${currentVersion.value}` : ''))
 
@@ -79,6 +94,7 @@ const safeReleaseNotes = computed(() => sanitizeHtml(releaseNotes.value))
 
 function applyState(s) {
   if (!s) return
+  const prevStatus = status.value
   status.value = s.status || 'idle'
   if (s.currentVersion) currentVersion.value = s.currentVersion
   if (s.latestVersion) latestVersion.value = s.latestVersion
@@ -92,6 +108,9 @@ function applyState(s) {
   installNotice.value = status.value === 'ready-to-install'
   if (!isUpdateAvailable.value) {
     detailExpanded.value = false
+  }
+  if (status.value === 'error' && prevStatus !== 'error') {
+    startRetryCooldown()
   }
 }
 
@@ -167,6 +186,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (unsubscribeEvent) unsubscribeEvent()
   if (unsubscribeProgress) unsubscribeProgress()
+  if (cooldownTimer) clearInterval(cooldownTimer)
 })
 </script>
 
@@ -174,7 +194,17 @@ onBeforeUnmount(() => {
   <div class="card st-card updater-block">
     <div class="updater-head">
       <div class="updater-title">版本更新</div>
-      <span class="updater-version" data-test="current-version">{{ versionText }}</span>
+      <div class="updater-head-right">
+        <span class="updater-version" data-test="current-version">{{ versionText }}</span>
+        <button
+          class="btn btn-text updater-recheck"
+          data-test="recheck-btn"
+          :disabled="checking || downloading || installNotice || retryCooldown > 0"
+          @click="check"
+        >
+          {{ checking ? '检查中…' : retryCooldown > 0 ? `检查更新 (${retryCooldown}s)` : '检查更新' }}
+        </button>
+      </div>
     </div>
 
     <div class="updater-body">
@@ -200,7 +230,9 @@ onBeforeUnmount(() => {
       <!-- 检查失败 -->
       <template v-else-if="status === 'error' && !isUpdateAvailable">
         <div class="updater-result updater-error">{{ errorText }}</div>
-        <button class="btn" @click="check">重试</button>
+        <button class="btn" :disabled="retryCooldown > 0" @click="check">
+          {{ retryCooldown > 0 ? `重试 (${retryCooldown}s)` : '重试' }}
+        </button>
       </template>
 
       <!-- 有新版本：惰性展示最新版本入口（spec 5.2.1-2） -->
@@ -287,6 +319,15 @@ onBeforeUnmount(() => {
   color: var(--text-2);
   font-size: 0.85rem;
   font-family: Consolas, 'Courier New', monospace;
+}
+.updater-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.updater-recheck {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.55rem;
 }
 .updater-body {
   margin-top: 0.7rem;
