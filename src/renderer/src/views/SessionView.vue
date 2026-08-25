@@ -137,7 +137,9 @@ function askSubmit() {
 async function doSubmit() {
   confirmSubmit.value = false
   try {
-    await api.submitPractice(session.value.id, answers.value, elapsedMs.value)
+    // 转换为普通数组，避免 IPC 克隆错误
+    const plainAnswers = JSON.parse(JSON.stringify(toRaw(answers.value)))
+    await api.submitPractice(session.value.id, plainAnswers, elapsedMs.value)
     router.push({ path: '/practice/result', query: { sessionId: session.value.id } })
   } catch (err) {
     toast.error('交卷失败：' + (err.message || err))

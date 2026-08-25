@@ -132,7 +132,8 @@ function registerQuestionHandlers() {
     const { id = null, categoryId, stem, options, answer, analysis } = payload || {}
     if (!categoryId) throw new Error('请选择分类')
     if (!stem || !String(stem).trim()) throw new Error('题干不能为空')
-    if (!Array.isArray(options) || options.length < 2) throw new Error('选项不完整')
+    // 选项允许为空（截图已包含选项时无需填写）
+    if (!Array.isArray(options)) throw new Error('选项格式不正确')
     if (!['A', 'B', 'C', 'D'].includes(answer)) throw new Error('答案必须为 A/B/C/D')
     const cleanStem = sanitizeHtml(String(stem).trim())
     const cleanAnalysis = sanitizeHtml(String(analysis || ''))

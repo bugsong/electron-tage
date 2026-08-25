@@ -62,6 +62,16 @@ async function reviewWrong() {
     toast.error(err.message || '错题重练开始失败')
   }
 }
+
+function getQuestionStatus(i) {
+  if (session.value.answers[i] == null) return 'unanswered'
+  return session.value.result[i] ? 'correct' : 'wrong'
+}
+
+function openQuestionDetail(i) {
+  const q = session.value.questions[i]
+  detailFor.value = { q, i }
+}
 </script>
 
 <template>
@@ -98,6 +108,47 @@ async function reviewWrong() {
         <div class="r-item">
           <div class="r-item-num gray">{{ unanswered }}</div>
           <div class="r-item-label">未答</div>
+        </div>
+      </div>
+
+      <!-- 答题卡区域 -->
+      <div class="card r-answer-card-section">
+        <div class="r-answer-card-header">
+          <div class="r-answer-card-title">答题卡</div>
+          <div class="r-answer-card-stats">
+            <span class="stat-item"><span class="dot correct"></span>对 {{ session.correct }}</span>
+            <span class="stat-item"><span class="dot wrong"></span>错 {{ wrongCount }}</span>
+            <span class="stat-item"><span class="dot unanswered"></span>未答 {{ unanswered }}</span>
+          </div>
+        </div>
+        
+        <!-- 统计数据行 -->
+        <div class="r-answer-card-metrics">
+          <div class="metric">
+            <span class="metric-value">{{ session.correct }}/{{ session.total }}</span>
+            <span class="metric-label">得分</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value">{{ correctRate }}%</span>
+            <span class="metric-label">正确率</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value">{{ fmtDuration(session.durationMs) }}</span>
+            <span class="metric-label">用时</span>
+          </div>
+        </div>
+        
+        <!-- 题号网格 -->
+        <div class="r-answer-card-grid full">
+          <button
+            v-for="(_, i) in session.questions"
+            :key="i"
+            class="answer-card-btn"
+            :class="getQuestionStatus(i)"
+            @click="openQuestionDetail(i)"
+          >
+            {{ i + 1 }}
+          </button>
         </div>
       </div>
 
@@ -184,6 +235,125 @@ async function reviewWrong() {
   font-size: 0.8rem;
   color: var(--text-2);
 }
+
+/* 答题卡区域 */
+.r-answer-card-section {
+  margin-bottom: 1.1rem;
+  padding: 1rem 1.2rem;
+}
+.r-answer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+.r-answer-card-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.r-answer-card-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* 统计数据行 */
+.r-answer-card-metrics {
+  display: flex;
+  justify-content: space-around;
+  padding: 0.8rem 0;
+  margin-bottom: 0.8rem;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.metric {
+  text-align: center;
+}
+.metric-value {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.metric-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-2);
+  margin-top: 0.2rem;
+}
+
+/* 题号网格 */
+.r-answer-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.2rem, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.r-answer-card-grid.full {
+  max-height: none;
+  overflow: visible;
+}
+
+/* 答题卡按钮 */
+.answer-card-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  border: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.answer-card-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.answer-card-btn.correct {
+  background: var(--success);
+  color: white;
+}
+.answer-card-btn.wrong {
+  background: var(--danger);
+  color: white;
+}
+.answer-card-btn.unanswered {
+  background: var(--border);
+  color: var(--text-2);
+}
+.answer-card-btn.large {
+  width: 2.6rem;
+  height: 2.6rem;
+  font-size: 0.95rem;
+}
+
+/* 小圆点 */
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot.correct {
+  background: var(--success);
+}
+.dot.wrong {
+  background: var(--danger);
+}
+.dot.unanswered {
+  background: var(--border);
+  border: 1px solid var(--text-3);
+}
+
 .r-list {
   margin-bottom: 1rem;
   overflow: hidden;

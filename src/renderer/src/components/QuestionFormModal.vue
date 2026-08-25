@@ -60,10 +60,6 @@ async function save() {
     return
   }
   const opts = options.value.map((o) => o.trim())
-  if (opts.filter((o) => o).length < 2) {
-    toast.error('请至少填写两个选项')
-    return
-  }
   saving.value = true
   try {
     await api.saveQuestion({
@@ -106,8 +102,9 @@ async function save() {
       <div class="qf-options">
         <div v-for="(opt, i) in options" :key="i" class="qf-opt">
           <span class="qf-letter">{{ 'ABCD'[i] }}</span>
-          <input v-model="options[i]" class="input" :placeholder="`选项 ${'ABCD'[i]}…`" />
+          <input v-model="options[i]" class="input" :placeholder="`选项 ${'ABCD'[i]}（可留空）…`" />
         </div>
+        <div class="qf-opt-tip">选项可留空，截图已包含选项时无需重复填写</div>
       </div>
 
       <div class="qf-row">
@@ -171,6 +168,11 @@ async function save() {
   color: var(--text-2);
   width: 1.2rem;
   text-align: center;
+}
+.qf-opt-tip {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  padding-left: 1.8rem;
 }
 .qf-answer {
   width: 5rem;

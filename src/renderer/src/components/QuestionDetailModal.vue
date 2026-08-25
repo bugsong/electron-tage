@@ -22,7 +22,12 @@ const noteOpen = ref(false)
 const noteContent = ref('')
 
 const safeStem = computed(() => sanitizeHtml(props.question.stem))
-const safeOptions = computed(() => props.question.options.map((o) => sanitizeHtml(o)))
+// 过滤空选项：截图已包含选项时可不填写；保留字母对应关系避免索引错位
+const safeOptions = computed(() =>
+  (props.question.options || [])
+    .map((o, i) => ({ letter: LETTERS[i], text: sanitizeHtml(o) }))
+    .filter((o) => o.text.trim())
+)
 const safeAnalysis = computed(() => sanitizeHtml(props.question.analysis || ''))
 
 async function loadNote() {
@@ -37,8 +42,7 @@ async function loadNote() {
 
 onMounted(loadNote)
 
-function optionClass(i) {
-  const letter = LETTERS[i]
+function optionClass(letter) {
   const cls = []
   if (props.myAnswer != null) {
     if (props.question.answer === letter) cls.push('is-correct')
@@ -60,10 +64,11 @@ function optionClass(i) {
       </div>
       <div class="d-stem" v-html="safeStem"></div>
       <div class="d-options">
-        <div v-for="(opt, i) in safeOptions" :key="i" class="d-option" :class="optionClass(i)">
-          <span class="d-letter">{{ LETTERS[i] }}</span>
-          <span v-html="opt"></span>
+        <div v-for="opt in safeOptions" :key="opt.letter" class="d-option" :class="optionClass(opt.letter)">
+          <span class="d-letter">{{ opt.letter }}</span>
+          <span v-html="opt.text"></span>
         </div>
+        <div v-if="!safeOptions.length" class="d-options-empty">选项见题干</div>
       </div>
       <div v-if="myAnswer != null" class="d-answer-line">
         我的答案：<b>{{ myAnswer }}</b>
@@ -140,6 +145,11 @@ function optionClass(i) {
   font-weight: 700;
   color: var(--text-2);
   flex-shrink: 0;
+}
+.d-options-empty {
+  padding: 0.4rem 0.2rem;
+  color: var(--text-2);
+  font-size: 0.88rem;
 }
 .d-answer-line {
   font-size: 0.95rem;

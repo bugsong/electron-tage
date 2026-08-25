@@ -19,10 +19,10 @@ const TEST_SCRIPT = `
     out.list = (await api.listQuestions({ page: 1, pageSize: 5 })).total
 
     const politics = tree.find(n => n.name === '政治理论')
-    const xszl = politics.children.find(c => c.name === '新思想总论')
+    const xszl = politics.children.find(c => c.name === '新思想')
     const s = await api.startPractice({
       type: 'special',
-      title: '专项智能练习（新思想总论）',
+      title: '专项智能练习（新思想）',
       categoryIds: [xszl.id],
       count: 2
     })

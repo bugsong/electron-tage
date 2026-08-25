@@ -20,15 +20,19 @@ const LETTERS = ['A', 'B', 'C', 'D']
 const paperOpen = ref(false)
 
 const safeStem = computed(() => sanitizeHtml(props.question.stem))
-const safeOptions = computed(() => props.question.options.map((o) => sanitizeHtml(o)))
+// 过滤空选项：截图已包含选项时可不填写；保留字母对应关系避免索引错位
+const safeOptions = computed(() =>
+  (props.question.options || [])
+    .map((o, i) => ({ letter: LETTERS[i], text: sanitizeHtml(o) }))
+    .filter((o) => o.text.trim())
+)
 
-function onPick(i) {
+function onPick(letter) {
   if (props.showResult || paperOpen.value) return
-  emit('select', LETTERS[i])
+  emit('select', letter)
 }
 
-function optionClass(i) {
-  const letter = LETTERS[i]
+function optionClass(letter) {
   const cls = []
   if (props.showResult) {
     if (props.question.answer === letter) cls.push('is-correct')
@@ -99,18 +103,19 @@ function togglePaper() {
 
     <div class="q-options">
       <div
-        v-for="(opt, i) in safeOptions"
-        :key="i"
+        v-for="opt in safeOptions"
+        :key="opt.letter"
         class="q-option"
-        :class="optionClass(i)"
-        @click="onPick(i)"
+        :class="optionClass(opt.letter)"
+        @click="onPick(opt.letter)"
       >
-        <span class="q-radio" :class="{ checked: !showResult && answer === LETTERS[i] }"></span>
-        <span class="q-letter">{{ LETTERS[i] }}</span>
-        <span class="q-option-text" v-html="opt"></span>
-        <span v-if="showResult && question.answer === LETTERS[i]" class="q-mark">✓</span>
-        <span v-else-if="showResult && answer === LETTERS[i] && answer !== question.answer" class="q-mark wrong">✕</span>
+        <span class="q-radio" :class="{ checked: !showResult && answer === opt.letter }"></span>
+        <span class="q-letter">{{ opt.letter }}</span>
+        <span class="q-option-text" v-html="opt.text"></span>
+        <span v-if="showResult && question.answer === opt.letter" class="q-mark">✓</span>
+        <span v-else-if="showResult && answer === opt.letter && answer !== question.answer" class="q-mark wrong">✕</span>
       </div>
+      <div v-if="!safeOptions.length" class="q-options-empty">选项见题干</div>
     </div>
   </div>
 </template>
@@ -223,6 +228,11 @@ function togglePaper() {
 .q-option-text {
   flex: 1;
   word-break: break-word;
+}
+.q-options-empty {
+  padding: 0.6rem 0.2rem;
+  color: var(--text-2);
+  font-size: 0.88rem;
 }
 .q-mark {
   color: var(--success);

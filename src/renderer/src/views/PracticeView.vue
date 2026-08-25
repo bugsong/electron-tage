@@ -56,20 +56,18 @@ function onComposeStarted(sessionId) {
   router.push({ path: '/practice/session', query: { sessionId } })
 }
 
-/** 一级节点展示的子项：政治理论在最前面补一个虚拟「全部」 */
+/** 每个一级节点都在最前面补一个虚拟「全部」 */
 function visibleChildren(node) {
   const subs = [...node.children]
-  if (node.name === '政治理论') {
-    subs.unshift({
-      id: 'all-' + node.id,
-      virtual: true,
-      parentId: node.id,
-      parentName: node.name,
-      name: '全部',
-      total: node.total,
-      done: node.done
-    })
-  }
+  subs.unshift({
+    id: 'all-' + node.id,
+    virtual: true,
+    parentId: node.id,
+    parentName: node.name,
+    name: '全部',
+    total: node.total,
+    done: node.done
+  })
   return subs
 }
 </script>
