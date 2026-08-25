@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../api'
 import Modal from './Modal.vue'
+import RichTextEditor from './RichTextEditor.vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import { useToastStore } from '../stores/toast'
 
@@ -55,7 +56,8 @@ async function save() {
     return
   }
   const cleanStem = sanitizeHtml(stem.value.trim())
-  if (!cleanStem) {
+  // 富文本可能只有空标签（<p><br></p>），按纯文本判空
+  if (!cleanStem.replace(/<[^>]*>/g, '').trim()) {
     toast.error('题干不能为空')
     return
   }
@@ -96,7 +98,7 @@ async function save() {
 
       <div class="qf-row">
         <label class="qf-label">题干</label>
-        <textarea v-model="stem" class="textarea" rows="4" placeholder="输入题干…"></textarea>
+        <RichTextEditor v-model="stem" placeholder="输入题干，支持粘贴/插入图片…" height="180px" />
       </div>
 
       <div class="qf-options">
@@ -119,7 +121,7 @@ async function save() {
 
       <div class="qf-row">
         <label class="qf-label">解析</label>
-        <textarea v-model="analysis" class="textarea" rows="3" placeholder="答案解析（可选）…"></textarea>
+        <RichTextEditor v-model="analysis" placeholder="答案解析（可选），支持插入图片…" height="140px" />
       </div>
     </div>
 

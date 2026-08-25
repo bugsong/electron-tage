@@ -1,15 +1,9 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const { app } = require('electron')
-
-// 使用 Node 内置 node:sqlite（Electron 36+ / Node 22.13+ 起可用），
-// 避免 better-sqlite3 原生模块在 Windows 上编译/重编译的麻烦。
-let DatabaseSync = null
-try {
-  ;({ DatabaseSync } = require('node:sqlite'))
-} catch {
-  DatabaseSync = null
-}
+// better-sqlite3：同步 API，原生支持 BLOB（Buffer）绑定，
+// v13 起为 N-API 实现，node 与 Electron ABI 通用，无需 electron-rebuild。
+const Database = require('better-sqlite3')
 
 let db = null
 
@@ -23,17 +17,17 @@ function dbPath() {
 }
 
 function initDb() {
-  if (!DatabaseSync) {
-    throw new Error('当前 Electron 内置的 Node 版本不支持 node:sqlite（需 Node 22.13+）')
-  }
   const dir = app.getPath('userData')
   fs.mkdirSync(dir, { recursive: true })
-  db = new DatabaseSync(dbPath())
-  db.exec('PRAGMA journal_mode = WAL')
-  db.exec('PRAGMA foreign_keys = ON')
+  db = new Database(dbPath())
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
   createSchema()
   seedIfEmpty()
   migrateCategorySchema()
+  // 图片 BLOB 表（历史 base64/file 引用的迁移在应用启动后异步执行）
+  const { createImagesSchema } = require('./images')
+  createImagesSchema(db)
   return db
 }
 

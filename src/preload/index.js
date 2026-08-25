@@ -41,6 +41,10 @@ const api = {
     ipcRenderer.invoke('practice:submit', id, answers, elapsedMs),
   abandonPractice: (id) => ipcRenderer.invoke('practice:abandon', id),
 
+  // 图片（BLOB 存储）
+  saveImage: (data) => ipcRenderer.invoke('image:save', data),
+  getImage: (id) => ipcRenderer.invoke('image:get', id),
+
   // 统计与设置
   getStats: () => ipcRenderer.invoke('stats:home'),
   getSettings: () => ipcRenderer.invoke('settings:getAll'),

@@ -78,6 +78,38 @@ const TEST_SCRIPT = `
     const wr = await api.startPractice({ type: 'wrong_review', title: '错题重练', count: 5 })
     out.错题重练抽题 = (await api.getSession(wr.id)).questions.length
 
+    // ---- 图片 BLOB + local-image 协议链路 ----
+    const canvas = document.createElement('canvas')
+    canvas.width = 2000
+    canvas.height = 1500
+    const cx = canvas.getContext('2d')
+    cx.fillStyle = '#4a90d9'
+    cx.fillRect(0, 0, 2000, 1500)
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'))
+    const imgBuf = new Uint8Array(await blob.arrayBuffer())
+    const saved = await api.saveImage(imgBuf)
+    out.图片保存 = saved.id ? saved.id.length > 10 : false
+    const got = await api.getImage(saved.id)
+    out.图片压缩 = got ? got.mime + ':' + got.width + 'x' + got.height : 'null'
+    const resp = await fetch('local-image://' + saved.id)
+    out.协议加载 = resp.status + ':' + resp.headers.get('content-type')
+
+    // 含 local-image 引用的题目保存与回读
+    const csTree = await api.categoryTree()
+    const cs = csTree.find((n) => n.name === '常识判断')
+    const law = cs.children.find((c) => c.name === '法律常识')
+    const imgQ = await api.saveQuestion({
+      id: null,
+      categoryId: law.id,
+      stem: '<p>含图题目</p><img src="local-image://' + saved.id + '">',
+      options: ['', '', '', ''],
+      answer: 'A',
+      analysis: ''
+    })
+    const imgQGet = await api.getQuestion(imgQ.id)
+    out.题目图引用 = /local-image:\\/\\//.test(imgQGet.stem)
+    out.空选项题目 = JSON.stringify(imgQGet.options)
+
     return 'PASS ' + JSON.stringify(out, null, 1)
   } catch (err) {
     return 'FAIL: ' + (err && err.stack ? err.stack : String(err))
@@ -94,6 +126,19 @@ const UI_SCRIPT = `
     await new Promise((res) => setTimeout(res, 500))
     const main = document.querySelector('.app-main')
     results.push(r + ' => ' + (main ? main.innerText.replace(/\\n+/g, ' ').slice(0, 50) : 'NO MAIN'))
+  }
+  // 富文本编辑器冒烟：打开「新增题目」，检查 WangEditor 工具栏挂载
+  location.hash = '#/questions'
+  await new Promise((res) => setTimeout(res, 600))
+  const addBtn = [...document.querySelectorAll('button')].find((b) => b.innerText.includes('新增题目'))
+  if (addBtn) {
+    addBtn.click()
+    await new Promise((res) => setTimeout(res, 1500))
+    const rte = document.querySelector('.w-e-toolbar')
+    const rteEditor = document.querySelector('.w-e-text-container')
+    results.push('rte-editor => ' + (rte && rteEditor ? 'OK' : 'NOT_MOUNTED'))
+  } else {
+    results.push('rte-editor => NO_ADD_BUTTON')
   }
   return results.join('\\n')
 })()

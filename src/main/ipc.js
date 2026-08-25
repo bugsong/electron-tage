@@ -2,6 +2,7 @@ const { ipcMain, dialog } = require('electron')
 const { getDb, dbPath } = require('./db')
 const { parseExcel } = require('./excel')
 const { sanitizeHtml } = require('../shared/sanitize')
+const { saveImage, getImage } = require('./images')
 
 const now = () => Date.now()
 
@@ -619,6 +620,23 @@ function registerSettingsHandlers() {
   })
 }
 
+/* ---------------- 图片（BLOB） ---------------- */
+
+function registerImageHandlers() {
+  // 保存图片：压缩后入库，返回 local-image://{id} 的 id
+  ipcMain.handle('image:save', async (e, data) => {
+    if (!data) throw new Error('图片数据为空')
+    return saveImage(data)
+  })
+
+  // 读取图片 BLOB（供前端预览等场景）
+  ipcMain.handle('image:get', (e, id) => {
+    const img = getImage(id)
+    if (!img) return null
+    return { data: img.data, mime: img.mime, width: img.width, height: img.height }
+  })
+}
+
 /* ---------------- 注册 ---------------- */
 
 function registerIpc() {
@@ -628,6 +646,7 @@ function registerIpc() {
   registerPracticeHandlers()
   registerStatsHandlers()
   registerSettingsHandlers()
+  registerImageHandlers()
 }
 
 module.exports = { registerIpc }

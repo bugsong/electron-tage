@@ -1,9 +1,10 @@
-const { app, BrowserWindow, dialog } = require('electron')
+const { app, BrowserWindow, dialog, protocol, net } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
 const { initDb, dbPath } = require('./db')
 const { registerIpc } = require('./ipc')
+const { migrateImages, getImage } = require('./images')
 const { runE2eTest, runUiSmoke } = require('./e2e')
 
 // 端到端/UI 自检：使用独立临时数据库，避免污染真实数据
@@ -69,8 +70,22 @@ app.whenReady().then(() => {
     app.quit()
     return
   }
+
+  // local-image:// 自定义协议：从数据库 BLOB 读取图片
+  protocol.handle('local-image', (req) => {
+    const id = new URL(req.url).hostname
+    const img = getImage(id)
+    if (!img) return new Response(null, { status: 404 })
+    return new Response(img.data, { headers: { 'content-type': img.mime } })
+  })
+
   registerIpc()
   createWindow()
+
+  // 后台迁移历史图片（base64 / file:// → BLOB），不阻塞启动
+  migrateImages()
+    .then((r) => console.log('[db] 图片迁移:', JSON.stringify(r)))
+    .catch((err) => console.error('[db] 图片迁移失败:', err))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -80,3 +95,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+// 自定义协议需在 ready 前声明特权
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-image', privileges: { secure: true, supportFetchAPI: true, stream: true } }
+])
