@@ -23,6 +23,13 @@ Module._load = function (request, ...args) {
           return packaged
         }
       },
+      // 测试用 safeStorage mock：可逆异或混淆，模拟"加密落盘、解密还原"语义，
+      // 保证落盘内容不出现明文（便于测试断言磁盘上无明文密钥）
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (s) => Buffer.from(Buffer.from(String(s), 'utf8').map((b) => b ^ 0x5a)),
+        decryptString: (b) => Buffer.from(Buffer.from(b).map((x) => x ^ 0x5a)).toString('utf8')
+      },
       ipcMain: { handle: () => {} },
       shell: { openExternal: async () => true },
       BrowserWindow: { getAllWindows: () => [] }

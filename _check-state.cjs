@@ -4,7 +4,7 @@ if (!fs.existsSync(p)) {
   console.log('no db')
   process.exit(0)
 }
-const Database = require('better-sqlite3')
+const Database = require('better-sqlite3-multiple-ciphers')
 const db = new Database(p, { readonly: true })
 const row = db.prepare("SELECT value FROM settings WHERE key = 'license.state'").get()
 console.log('license.state:', row ? row.value : '(none)')

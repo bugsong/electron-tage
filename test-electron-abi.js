@@ -1,9 +1,9 @@
-// 验证 better-sqlite3 在 Electron 运行时能否加载（ABI 兼容性检查）
+// 验证 better-sqlite3-multiple-ciphers 在 Electron 运行时能否加载（ABI 兼容性检查）
 const { app } = require('electron')
 
 app.whenReady().then(() => {
   try {
-    const db = require('better-sqlite3')(':memory:')
+    const db = require('better-sqlite3-multiple-ciphers')(':memory:')
     db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB)')
     const buf = Buffer.from([1, 2, 3, 4, 5])
     db.prepare('INSERT INTO t (data) VALUES (?)').run(buf)

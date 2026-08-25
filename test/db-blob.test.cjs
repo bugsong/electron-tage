@@ -9,8 +9,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { freshUserData } = require('./helpers.cjs')
 
-test('better-sqlite3 可加载且为同步 API', () => {
-  const Database = require('better-sqlite3')
+test('better-sqlite3-multiple-ciphers 可加载且为同步 API', () => {
+  const Database = require('better-sqlite3-multiple-ciphers')
   const db = new Database(':memory:')
   assert.equal(typeof db.prepare, 'function')
   // 同步执行：直接返回结果，无需 await
@@ -20,7 +20,7 @@ test('better-sqlite3 可加载且为同步 API', () => {
 })
 
 test('BLOB 写入与读取往返一致', () => {
-  const Database = require('better-sqlite3')
+  const Database = require('better-sqlite3-multiple-ciphers')
   const db = new Database(':memory:')
   db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB)')
 
@@ -35,7 +35,7 @@ test('BLOB 写入与读取往返一致', () => {
   db.close()
 })
 
-test('真实 db.js 初始化（createSchema+seed+migrate）在 better-sqlite3 下正常，且支持 BLOB', () => {
+test('真实 db.js 初始化（createSchema+seed+migrate）在 SQLCipher 下正常，且支持 BLOB', () => {
   freshUserData()
   const { initDb, getDb } = require('../src/main/db')
   initDb()

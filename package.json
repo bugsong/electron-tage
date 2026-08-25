@@ -31,7 +31,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${name}-${version}-${arch}.${ext}"
@@ -45,7 +47,7 @@
   "dependencies": {
     "@wangeditor/editor": "^5.1.23",
     "@wangeditor/editor-for-vue": "^5.1.12",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3-multiple-ciphers": "^13.0.3",
     "builder-util-runtime": "^9.7.0",
     "electron-updater": "^6.8.9",
     "pinia": "^4.0.3",

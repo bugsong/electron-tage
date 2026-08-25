@@ -1,9 +1,11 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const { app } = require('electron')
-// better-sqlite3：同步 API，原生支持 BLOB（Buffer）绑定，
-// v13 起为 N-API 实现，node 与 Electron ABI 通用，无需 electron-rebuild。
-const Database = require('better-sqlite3')
+// better-sqlite3-multiple-ciphers：better-sqlite3 的 SQLCipher fork，
+// 同步 API、原生支持 BLOB（Buffer）绑定，v13 起为 N-API 实现，node 与 Electron ABI 通用，
+// 额外支持 SQLCipher 的 PRAGMA key / rekey，用于数据库整体加密。
+const Database = require('better-sqlite3-multiple-ciphers')
+const { loadKey, wipeKey } = require('./keyring')
 
 /** 数据库文件名（曾用名 comate.db，已改名 tage.db） */
 const DB_FILE = 'tage.db'
@@ -56,7 +58,7 @@ function migrateLegacyDbFile(dir) {
 
 /**
  * 把数据库迁移到新目录（或在新目录初始化）：
- * - 原位置已有数据库 → 在线备份迁移到新位置（WAL 安全）
+ * - 原位置已有数据库 → 关闭连接合并 WAL 后整文件复制到新位置（加密属性随文件保留）
  * - 原位置没有数据库 → 直接在新位置初始化
  * - 目标已存在数据库文件且未强制 → 返回 need_confirm，由前端确认后带 force 重试
  * 成功后持久化配置并重新打开新库；失败则回滚配置、恢复原库。
@@ -97,13 +99,22 @@ async function moveDb(newDir, opts = {}) {
   const oldDir = configuredDataDir()
   fs.mkdirSync(targetDir, { recursive: true })
 
-  // 原位置有数据库：在线备份到新位置（better-sqlite3 backup 兼容 WAL，生成完整主库文件）
+  // 原位置有数据库：关闭连接（close 自动 checkpoint，把 WAL 合并进主文件）后整文件复制到新位置。
+  // SQLCipher 加密库无法在线 backup 到未加密目标（incompatible source and target），
+  // 文件级复制保证迁移产物仍是同密钥加密的完整数据库。
   if (sourceExists) {
-    // force 覆盖时先移除旧目标，避免备份到非 SQLite 文件（或旧库）时报错
+    // force 覆盖时先移除旧目标，避免复制到非 SQLite 文件（或旧库）上
     if (targetExists) {
       try { fs.unlinkSync(target) } catch {}
     }
-    await db.backup(target)
+    try {
+      db.close()
+      db = null
+      fs.copyFileSync(current, target)
+    } catch (err) {
+      try { db = null; initDb() } catch {}
+      throw new Error('迁移失败，未能复制数据库：' + ((err && err.message) || err))
+    }
   }
 
   // 持久化新位置
@@ -111,8 +122,10 @@ async function moveDb(newDir, opts = {}) {
 
   // 关闭旧连接，在新位置重新打开
   try {
-    db.close()
-    db = null
+    if (db) {
+      db.close()
+      db = null
+    }
     initDb()
   } catch (err) {
     // 失败回滚：恢复原配置并重新打开原库，保证数据可用
@@ -138,19 +151,63 @@ async function moveDb(newDir, opts = {}) {
   }
 }
 
+/**
+ * 以 SQLCipher 加密方式打开数据库：
+ * - 自动探测是否已加密：无密钥打开后能读取 sqlite_master 说明未加密，否则视为已加密
+ * - 未加密（含全新空库）→ 原地 PRAGMA rekey 迁移为加密库
+ * - 已加密 → 以密钥重新打开
+ * 调用方负责在 initDb 的 finally 中擦除密钥。
+ * @param {string} file 数据库文件路径
+ * @param {Buffer} key 32 字节密钥（使用后由调用方擦除）
+ */
+function openEncryptedDb(file, key) {
+  const keyHex = key.toString('hex')
+
+  let encrypted = true
+  let probe = null
+  try {
+    probe = new Database(file)
+    probe.prepare('SELECT count(*) FROM sqlite_master').get()
+    encrypted = false
+  } catch {
+    encrypted = true
+  } finally {
+    if (probe) {
+      try { probe.close() } catch {}
+    }
+  }
+
+  db = new Database(file)
+  if (encrypted) {
+    db.pragma(`key = "x'${keyHex}'"`)
+  } else {
+    db.pragma(`rekey = "x'${keyHex}'"`)
+  }
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+}
+
 function initDb() {
   const dir = configuredDataDir()
   fs.mkdirSync(dir, { recursive: true })
   migrateLegacyDbFile(dir)
-  db = new Database(dbPath())
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  createSchema()
-  seedIfEmpty()
-  migrateCategorySchema()
-  // 图片 BLOB 表（历史 base64/file 引用的迁移在应用启动后异步执行）
-  const { createImagesSchema } = require('./images')
-  createImagesSchema(db)
+
+  const key = loadKey()
+  try {
+    openEncryptedDb(dbPath(), key)
+    createSchema()
+    seedIfEmpty()
+    migrateCategorySchema()
+    // 图片 BLOB 表（历史 base64/file 引用的迁移在应用启动后异步执行）
+    const { createImagesSchema } = require('./images')
+    createImagesSchema(db)
+  } catch (err) {
+    try { if (db) db.close() } catch {}
+    db = null
+    throw err
+  } finally {
+    wipeKey(key)
+  }
   return db
 }
 
