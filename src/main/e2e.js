@@ -760,6 +760,24 @@ const UI_SCRIPT = `
     results.push('sidebar-drawer => ERR ' + String(err).slice(0, 80))
   }
 
+  // 设置页设备唯一信息冒烟：卡片展示 64 位 hex 机器码（主进程采集硬件生成）且有复制按钮
+  try {
+    location.hash = '#/settings'
+    await wait(400)
+    const card = [...document.querySelectorAll('.st-card')].find((c) => c.innerText.includes('设备唯一信息'))
+    let mcText = ''
+    // 机器码读取为异步（主进程采集硬件），轮询等待出现 hex 串
+    for (let i = 0; i < 20 && !/^[0-9a-f]{64}$/.test(mcText); i++) {
+      await wait(300)
+      mcText = (card && card.innerText.match(/[0-9a-f]{64}/) || [''])[0] || ''
+    }
+    const copyBtn = card && [...card.querySelectorAll('button')].find((b) => b.innerText.includes('复制'))
+    const direct = await api.getMachineCode()
+    results.push('settings-device-info => ' + (/^[0-9a-f]{64}$/.test(mcText) && direct === mcText && copyBtn ? 'OK' : 'no-card=' + (card ? 'N' : 'Y') + ' copyBtn=' + (copyBtn ? 'Y' : 'N') + ' text=' + mcText + ' direct=' + direct))
+  } catch (err) {
+    results.push('settings-device-info => ERR ' + String(err).slice(0, 80))
+  }
+
   return results.join('\\n')
 })()
 `

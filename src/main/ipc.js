@@ -3,6 +3,7 @@ const { getDb, dbPath, configuredDataDir, moveDb } = require('./db')
 const { parseExcel } = require('./excel')
 const { sanitizeHtml } = require('../shared/sanitize')
 const { saveImage, getImage } = require('./images')
+const { registerLicenseIpc } = require('./license')
 
 const now = () => Date.now()
 
@@ -713,6 +714,7 @@ function registerIpc() {
   registerStatsHandlers()
   registerSettingsHandlers()
   registerImageHandlers()
+  registerLicenseIpc()
 }
 
 module.exports = { registerIpc }

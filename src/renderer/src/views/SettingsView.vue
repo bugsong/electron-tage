@@ -9,6 +9,10 @@ const settings = useSettingsStore()
 const toast = useToastStore()
 const dbPath = ref('')
 const moving = ref(false)
+// 设备唯一信息（机器码由主进程采集硬件并加密生成）
+const machineCode = ref('')
+const mcFailed = ref(false)
+const mcLoading = ref(false)
 // 待用户确认的迁移 { dir, message }
 const pendingMove = ref(null)
 
@@ -18,7 +22,33 @@ onMounted(async () => {
   } catch {
     dbPath.value = ''
   }
+  loadMachineCode()
 })
+
+async function loadMachineCode() {
+  if (mcLoading.value) return
+  mcLoading.value = true
+  mcFailed.value = false
+  try {
+    const code = await api.getMachineCode()
+    machineCode.value = code || ''
+    if (!code) mcFailed.value = true
+  } catch {
+    mcFailed.value = true
+  } finally {
+    mcLoading.value = false
+  }
+}
+
+async function copyMachineCode() {
+  if (!machineCode.value) return
+  try {
+    await navigator.clipboard.writeText(machineCode.value)
+    toast.success('设备信息已复制')
+  } catch {
+    toast.error('复制失败')
+  }
+}
 
 async function copyPath() {
   try {
@@ -133,6 +163,15 @@ function applyMoveResult(info) {
         </button>
       </div>
       <div class="st-desc st-desc-note">更改位置后，已有数据会自动迁移过去；若新位置还没有数据库，则会自动初始化</div>
+    </div>
+
+    <div class="card st-card">
+      <div class="st-title">设备唯一信息(已加密)</div>
+      <div class="st-desc">由本机硬件（CPUID、物理硬盘、BIOS）在本地加密生成，仅用于软件授权，不会上传；<br/>(进阶版约一杯奶茶价)请复制后发送给开发者生成进阶码</div>
+      <div class="st-path">
+        <span class="st-path-text">{{ mcFailed ? '获取失败' : machineCode || '获取中…' }}</span>
+        <button class="btn" @click="copyMachineCode" :disabled="!machineCode">复制</button>
+      </div>
     </div>
 
     <ConfirmDialog

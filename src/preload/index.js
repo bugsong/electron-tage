@@ -54,7 +54,11 @@ const api = {
 
   // 数据位置（数据库目录迁移/初始化）
   pickDbDir: () => ipcRenderer.invoke('dialog:pickDbDir'),
-  moveDb: (dir, opts) => ipcRenderer.invoke('app:moveDb', dir, opts)
+  moveDb: (dir, opts) => ipcRenderer.invoke('app:moveDb', dir, opts),
+
+  // 授权：硬件信息采集与验签均在主进程，渲染进程只拿结果做展示
+  getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
+  verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code)
 }
 
 contextBridge.exposeInMainWorld('api', api)
