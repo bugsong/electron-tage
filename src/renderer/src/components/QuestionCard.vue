@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { sanitizeHtml } from '../utils/sanitize'
 import PaperCanvas from './PaperCanvas.vue'
 import InlineNoteEditor from './InlineNoteEditor.vue'
@@ -20,6 +20,15 @@ const emit = defineEmits(['select', 'favorite', 'remove-wrong'])
 const LETTERS = ['A', 'B', 'C', 'D']
 const paperOpen = ref(false)
 const noteOpen = ref(false)
+
+// 切换题目（回看页上一题/下一题复用同一实例）时，自动关闭草纸与笔记覆层，避免带到下一题
+watch(
+  () => props.question.id,
+  () => {
+    paperOpen.value = false
+    noteOpen.value = false
+  }
+)
 
 const safeStem = computed(() => sanitizeHtml(props.question.stem))
 // 选项未填写时也保留 A/B/C/D 四个槽，保证可作答与字母对应

@@ -642,6 +642,38 @@ const UI_SCRIPT = `
     results.push('notes-review-page => ERR ' + String(err).slice(0, 80))
   }
 
+  // 切换题目自动关闭草纸覆层：回看页开草纸后点「下一题」，覆层应随题目切换关闭
+  try {
+    location.hash = '#/notes'
+    await wait(800)
+    const noteItem = document.querySelector('.note-item')
+    if (noteItem) {
+      noteItem.click()
+      await wait(1000)
+      const rvPage = document.querySelector('.review-page')
+      const nextBtn = rvPage && [...rvPage.querySelectorAll('button')].find((b) => b.innerText.trim() === '下一题')
+      const paperBtn = rvPage && rvPage.querySelector('.q-head-right button[title="草纸"]')
+      if (paperBtn && nextBtn && !nextBtn.disabled) {
+        paperBtn.click()
+        await wait(500)
+        const open1 = !!rvPage.querySelector('.paper-overlay')
+        nextBtn.click()
+        await wait(500)
+        const open2 = !!rvPage.querySelector('.paper-overlay')
+        results.push('review-switch-paper => ' + (open1 && !open2 ? 'OK' : 'open=' + open1 + '->' + open2))
+        const backBtn = [...rvPage.querySelectorAll('button')].find((b) => b.innerText.includes('笔记'))
+        if (backBtn) backBtn.click()
+        await wait(300)
+      } else {
+        results.push('review-switch-paper => NO_NAV')
+      }
+    } else {
+      results.push('review-switch-paper => NO_NOTE')
+    }
+  } catch (err) {
+    results.push('review-switch-paper => ERR ' + String(err).slice(0, 80))
+  }
+
   // 收藏回看冒烟：点击收藏条目应进入独立回看页（而非弹窗）
   try {
     location.hash = '#/favorites'
