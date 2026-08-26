@@ -44,21 +44,23 @@ const ERASER_SIZES = [
   { key: 'bold', label: '粗', px: 40, dot: 14 }
 ]
 
-const tool = ref('pen')
-const penSize = ref('normal')
-const penColor = ref(INK)
-const eraserSize = ref('normal')
-const eraserMode = ref('pixel') // 'pixel' 像素擦除 | 'stroke' 整笔擦除
-const drawing = ref(null)
-const saved = ref(false)
-
-// 进阶版判定：未激活时按普通版削弱（固定红色画笔 / 固定像素橡皮 / 不展示设置项 / 笔迹不落库）
-const pro = ref(true)
 // 普通版固定参数
 const FREE_PEN_COLOR = '#e5484d'
 const FREE_PEN_SIZE = 'normal'
 const FREE_ERASER_SIZE = 'normal'
 const FREE_ERASER_MODE = 'pixel'
+
+// 进阶版判定：未激活时按普通版削弱（固定红色画笔 / 固定像素橡皮 / 不展示设置项 / 笔迹不落库）
+// 初始按普通版渲染，授权确认后升级为进阶版，避免由高到低闪烁
+const pro = ref(false)
+
+const tool = ref('pen')
+const penSize = ref(FREE_PEN_SIZE)
+const penColor = ref(FREE_PEN_COLOR)
+const eraserSize = ref(FREE_ERASER_SIZE)
+const eraserMode = ref(FREE_ERASER_MODE) // 'pixel' 像素擦除 | 'stroke' 整笔擦除
+const drawing = ref(null)
+const saved = ref(false)
 
 async function loadLicense() {
   try {
