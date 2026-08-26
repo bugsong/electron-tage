@@ -1,6 +1,6 @@
 {
   "name": "comate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "个人刷题笔记（数据仅本机使用）",
   "main": "./out/main/index.js",
   "private": true,
@@ -36,7 +36,8 @@
           ]
         }
       ],
-      "artifactName": "${name}-${version}-${arch}.${ext}"
+      "artifactName": "${name}-${version}-${arch}.${ext}",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
