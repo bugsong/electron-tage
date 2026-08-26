@@ -7,16 +7,18 @@ import QuestionCard from '../components/QuestionCard.vue'
 import { clearSessionDrafts } from '../components/PaperCanvas.vue'
 import QuickSettingsModal from '../components/QuickSettingsModal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { sessionOrigin } from '../utils/session'
+import { useFavorites } from '../composables/useFavorites'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
+const { favorites, loadFavorites, toggleFavorite } = useFavorites()
 
 const session = ref(null)
 const questions = ref([])
 const answers = ref([])
-const favorites = ref(new Set())
 const elapsedMs = ref(0)
 const remainingMs = ref(0)
 const paused = ref(false)
@@ -35,12 +37,7 @@ let tick = 0
 let debounceTimer = null
 let submitting = false
 
-const origin = computed(() => {
-  const t = session.value && session.value.type
-  if (t === 'wrong_review') return '/wrong'
-  if (t === 'favorite') return '/favorites'
-  return '/practice'
-})
+const origin = computed(() => sessionOrigin(session.value && session.value.type))
 
 const answeredCount = computed(() => answers.value.filter((a) => a != null).length)
 const unAnsweredCount = computed(() => questions.value.length - answeredCount.value)
@@ -70,8 +67,7 @@ async function load() {
       remainingMs.value = Math.max(0, s.timerLimitMs - elapsedMs.value)
     }
     try {
-      const favs = await api.listFavorites()
-      favorites.value = new Set(favs.map((f) => f.questionId))
+      await loadFavorites()
     } catch {}
     startTimer()
   } catch (err) {
@@ -153,19 +149,6 @@ onBeforeUnmount(() => {
 
 function onSelect(i, opt) {
   answers.value[i] = opt
-}
-
-async function toggleFavorite(q) {
-  try {
-    const fav = await api.toggleFavorite(q.id)
-    const s = new Set(favorites.value)
-    if (fav) s.add(q.id)
-    else s.delete(q.id)
-    favorites.value = s
-    toast.success(fav ? '已收藏' : '已取消收藏')
-  } catch (err) {
-    toast.error('操作失败：' + (err.message || err))
-  }
 }
 
 function askSubmit() {
@@ -326,8 +309,9 @@ function isRemoved(q) {
 
 <style scoped>
 .session-page {
-  width: 80%;
-  max-width: 80%;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   margin: 0 auto;
 }
 .session-topbar {

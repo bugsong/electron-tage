@@ -30,8 +30,9 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 1080,
-    minHeight: 700,
+    // 启动尺寸即为最小尺寸：子界面元素以启动态为最小态，放大时可无限铺满屏幕
+    minWidth: 1280,
+    minHeight: 820,
     title: '题迹',
     backgroundColor: '#f3f6fa',
     autoHideMenuBar: true,

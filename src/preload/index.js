@@ -62,6 +62,7 @@ const api = {
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code),
   getLicenseStatus: () => ipcRenderer.invoke('license:status'),
+  deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
 
   // 版本更新：检查/下载/安装全部在主进程执行，公开产物仓库零认证
   getUpdaterState: () => ipcRenderer.invoke('updater:getState'),

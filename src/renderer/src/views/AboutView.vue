@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useToastStore } from '../stores/toast'
+import { useAdvancedStore } from '../stores/advanced'
 import UpdateBlock from '../components/UpdateBlock.vue'
 
 const toast = useToastStore()
@@ -69,6 +70,50 @@ onMounted(async () => {
   }
 })
 
+/* ---------------- 解除授权（二次确认彩蛋） ---------------- */
+const bubbleText = ref('')
+const clickStep = ref(0)
+let bubbleTimer = null
+
+function showDeactivateBubble(text) {
+  bubbleText.value = text
+  if (bubbleTimer) clearTimeout(bubbleTimer)
+  bubbleTimer = setTimeout(() => {
+    bubbleText.value = ''
+  }, 2000)
+}
+
+async function onDeactivateClick() {
+  if (clickStep.value === 0) {
+    // 第一次：气泡嘲讽一下
+    clickStep.value = 1
+    showDeactivateBubble('你真点啊？再点一下试试？')
+    return
+  }
+  // 第二次：气泡「我不吃牛肉！」后立即解除授权，回到普通版
+  clickStep.value = 0
+  showDeactivateBubble('我不吃牛肉！')
+  // 先让用户看到气泡，再执行解除，避免整块 UI 立刻消失看不到反馈
+  setTimeout(async () => {
+    bubbleText.value = ''
+    try {
+      const r = await api.deactivateLicense()
+      if (r && r.ok) {
+        status.value = { activated: false }
+        // 同步全局进阶 store：进阶版能力立即回退普通版（设置页进阶区也会隐藏）
+        const adv = useAdvancedStore()
+        adv.licensed = false
+        adv.loaded = false
+        toast.success('已解除进阶授权，回到普通版')
+      } else {
+        toast.error((r && r.reason) || '解除授权失败')
+      }
+    } catch (err) {
+      toast.error(err.message || '解除授权失败')
+    }
+  }, 800)
+}
+
 async function activate() {
   const c = code.value.trim()
   if (!c || activating.value) return
@@ -124,6 +169,13 @@ async function activate() {
           <div class="license-active-title">已激活进阶版</div>
           <div v-if="expireText" class="license-active-sub">有效期至 {{ expireText }}</div>
         </div>
+        <!-- 解除授权：最右侧按钮 + 二次确认气泡 -->
+        <button class="btn-deactivate" @click="onDeactivateClick">
+          解除授权
+          <transition name="bubble">
+            <span v-if="bubbleText" class="deactivate-bubble">{{ bubbleText }}</span>
+          </transition>
+        </button>
       </div>
 
       <!-- 未激活：输入进阶码 + 进阶按钮 -->
@@ -146,7 +198,7 @@ async function activate() {
     </div>
 
     <div class="card st-card about-cmp" :class="{ 'pro-active': activated }">
-      <div class="st-title">草纸进阶版对比</div>
+      <div class="st-title">进阶版能力UPPPP~</div>
       <table class="feat-table">
         <thead>
           <tr>
@@ -177,7 +229,8 @@ async function activate() {
 
 <style scoped>
 .about-page {
-  max-width: 620px;
+  /* 不再固定 620px，随屏幕自适应铺满，最大态不限制 */
+  max-width: none;
   margin: 0 auto;
 }
 .st-card {
@@ -254,6 +307,58 @@ async function activate() {
   font-size: 0.8rem;
   color: var(--gold);
   opacity: 0.85;
+}
+
+/* 解除授权按钮：置于「已激活进阶版」最右侧 */
+.btn-deactivate {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid var(--gold-border);
+  background: transparent;
+  color: var(--gold);
+  padding: 0.32rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-deactivate:hover {
+  background: var(--gold-weak);
+}
+
+/* 二次确认气泡（嘲讽文案） */
+.deactivate-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: var(--text);
+  color: #fff;
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  z-index: 6;
+  pointer-events: none;
+}
+.deactivate-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 6px solid transparent;
+  border-top-color: var(--text);
+}
+.bubble-enter-active,
+.bubble-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.bubble-enter-from,
+.bubble-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 /* 对比表 */

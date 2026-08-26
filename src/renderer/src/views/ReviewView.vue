@@ -5,11 +5,14 @@ import { api } from '../api'
 import { sanitizeHtml } from '../utils/sanitize'
 import QuestionCard from '../components/QuestionCard.vue'
 import { clearSessionDrafts } from '../components/PaperCanvas.vue'
+import { normalizeQuestion } from '../utils/session'
+import { useFavorites } from '../composables/useFavorites'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
+const { favorites, loadFavorites, toggleFavorite } = useFavorites()
 
 const session = ref(null)
 const wrongItems = ref([])
@@ -17,7 +20,6 @@ const noteItems = ref([])
 const favItems = ref([])
 const loading = ref(true)
 const index = ref(0)
-const favorites = ref(new Set())
 
 const isWrongMode = computed(() => route.query.mode === 'wrong')
 const isNotesMode = computed(() => route.query.mode === 'notes')
@@ -56,20 +58,9 @@ async function load() {
   if (isWrongMode.value) {
     try {
       const list = await api.listWrong({})
-      wrongItems.value = list.map((w) => ({
-        id: w.questionId,
-        questionId: w.questionId,
-        stem: w.stem,
-        options: w.options,
-        answer: w.answer,
-        analysis: w.analysis,
-        categoryName: w.categoryName
-      }))
+      wrongItems.value = list.map(normalizeQuestion)
       index.value = Math.min(Math.max(Number(route.query.index) || 0, 0), Math.max(wrongItems.value.length - 1, 0))
-      try {
-        const favs = await api.listFavorites()
-        favorites.value = new Set(favs.map((f) => f.questionId))
-      } catch {}
+      await loadFavorites()
     } catch (err) {
       toast.error('加载失败：' + (err.message || err))
     } finally {
@@ -80,24 +71,13 @@ async function load() {
   if (isNotesMode.value) {
     try {
       const list = await api.listNotes({})
-      noteItems.value = list.map((n) => ({
-        id: n.questionId,
-        questionId: n.questionId,
-        stem: n.stem,
-        options: n.options,
-        answer: n.answer,
-        analysis: n.analysis,
-        categoryName: n.categoryName
-      }))
+      noteItems.value = list.map(normalizeQuestion)
       // 优先按 questionId 定位（来自笔记列表点击，带过滤也能对位），否则按 index
       const qid = Number(route.query.questionId)
       const pos = qid ? noteItems.value.findIndex((n) => n.questionId === qid) : -1
       const start = pos >= 0 ? pos : Number(route.query.index) || 0
       index.value = Math.min(Math.max(start, 0), Math.max(noteItems.value.length - 1, 0))
-      try {
-        const favs = await api.listFavorites()
-        favorites.value = new Set(favs.map((f) => f.questionId))
-      } catch {}
+      await loadFavorites()
     } catch (err) {
       toast.error('加载失败：' + (err.message || err))
     } finally {
@@ -108,24 +88,13 @@ async function load() {
   if (isFavMode.value) {
     try {
       const list = await api.listFavorites({})
-      favItems.value = list.map((f) => ({
-        id: f.questionId,
-        questionId: f.questionId,
-        stem: f.stem,
-        options: f.options,
-        answer: f.answer,
-        analysis: f.analysis,
-        categoryName: f.categoryName
-      }))
+      favItems.value = list.map(normalizeQuestion)
       // 优先按 questionId 定位（来自收藏列表点击，带过滤也能对位），否则按 index
       const qid = Number(route.query.questionId)
       const pos = qid ? favItems.value.findIndex((n) => n.questionId === qid) : -1
       const start = pos >= 0 ? pos : Number(route.query.index) || 0
       index.value = Math.min(Math.max(start, 0), Math.max(favItems.value.length - 1, 0))
-      try {
-        const favs = await api.listFavorites()
-        favorites.value = new Set(favs.map((f) => f.questionId))
-      } catch {}
+      await loadFavorites()
     } catch (err) {
       toast.error('加载失败：' + (err.message || err))
     } finally {
@@ -146,10 +115,7 @@ async function load() {
     }
     session.value = s
     index.value = Math.min(Math.max(Number(route.query.index) || 0, 0), Math.max(s.questions.length - 1, 0))
-    try {
-      const favs = await api.listFavorites()
-      favorites.value = new Set(favs.map((f) => f.questionId))
-    } catch {}
+    await loadFavorites()
   } catch (err) {
     toast.error('加载失败：' + (err.message || err))
   } finally {
@@ -165,18 +131,6 @@ function go(i) {
   router.replace({ path: '/practice/review', query })
 }
 
-async function toggleFavorite(q) {
-  try {
-    const fav = await api.toggleFavorite(q.id)
-    const s = new Set(favorites.value)
-    if (fav) s.add(q.id)
-    else s.delete(q.id)
-    favorites.value = s
-    toast.success(fav ? '已收藏' : '已取消收藏')
-  } catch (err) {
-    toast.error('操作失败：' + (err.message || err))
-  }
-}
 </script>
 
 <template>
@@ -234,8 +188,9 @@ async function toggleFavorite(q) {
 
 <style scoped>
 .review-page {
-  width: 80%;
-  max-width: 80%;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   margin: 0 auto;
 }
 .rv-topbar {

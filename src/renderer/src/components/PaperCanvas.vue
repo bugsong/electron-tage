@@ -12,8 +12,9 @@ export function clearSessionDrafts(scope) {
 </script>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick, watch, toRaw } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, toRaw } from 'vue'
 import { api } from '../api'
+import { useAdvancedStore } from '../stores/advanced'
 import { useToastStore } from '../stores/toast'
 
 const props = defineProps({
@@ -50,9 +51,25 @@ const FREE_PEN_SIZE = 'normal'
 const FREE_ERASER_SIZE = 'normal'
 const FREE_ERASER_MODE = 'pixel'
 
-// 进阶版判定：未激活时按普通版削弱（固定红色画笔 / 固定像素橡皮 / 不展示设置项 / 笔迹不落库）
-// 初始按普通版渲染，授权确认后升级为进阶版，避免由高到低闪烁
-const pro = ref(false)
+// 进阶版判定：由全局 advanced store 统一控制（授权 + 总开关 + 各子功能开关）
+// 未激活或总开关关闭时按普通版削弱（固定红色画笔 / 固定像素橡皮 / 不展示设置项 / 笔迹不落库）
+const adv = useAdvancedStore()
+
+// 进阶功能总开关是否生效（授权 && 总开关）
+const pro = computed(() => adv.advancedOn)
+// 各子功能是否生效
+const brushColorOn = computed(() => adv.advancedOn && adv.features.brushColor)
+const brushSizeOn = computed(() => adv.advancedOn && adv.features.brushSize)
+const eraserSizeOn = computed(() => adv.advancedOn && adv.features.eraserSize)
+const eraserModeOn = computed(() => adv.advancedOn && adv.features.eraserMode)
+// 记忆功能：草稿是否落库（草纸笔迹持久化）
+const memoryOn = computed(() => adv.advancedOn && adv.features.memory)
+
+// 各参数实际生效值：子功能关闭时回退普通版固定值
+const effPenColor = computed(() => (brushColorOn.value ? penColor.value : FREE_PEN_COLOR))
+const effPenSizeKey = computed(() => (brushSizeOn.value ? penSize.value : FREE_PEN_SIZE))
+const effEraserSizeKey = computed(() => (eraserSizeOn.value ? eraserSize.value : FREE_ERASER_SIZE))
+const effEraserMode = computed(() => (eraserModeOn.value ? eraserMode.value : FREE_ERASER_MODE))
 
 const tool = ref('pen')
 const penSize = ref(FREE_PEN_SIZE)
@@ -64,32 +81,26 @@ const saved = ref(false)
 
 async function loadLicense() {
   try {
-    const s = await api.getLicenseStatus()
-    pro.value = !!(s && s.activated)
+    await adv.load()
   } catch {
-    pro.value = true // 授权状态读取失败时按进阶版处理，避免误削弱
+    /* 兜底默认值 */
   }
-  if (pro.value) {
-    await loadToolPrefs()
-  } else {
-    // 普通版固定参数，不读取 / 保存上次状态
-    penColor.value = FREE_PEN_COLOR
-    penSize.value = FREE_PEN_SIZE
-    eraserSize.value = FREE_ERASER_SIZE
-    eraserMode.value = FREE_ERASER_MODE
-  }
+  // 始终读取上次保存的画笔/橡皮参数（存入响应式变量备用）；
+  // 实际是否生效由 eff* 计算属性按子功能开关决定，关闭时回退普通版固定值，
+  // 这样总开关 / 子开关反复切换也不会丢失用户的偏好设置
+  await loadToolPrefs()
 }
 
 /** 普通版会话内草稿缓存 key */
 const draftKey = () => (props.scope ? props.scope + ':' : '') + props.questionId
 
 function penSizePx() {
-  const s = PEN_SIZES.find((s) => s.key === penSize.value)
+  const s = PEN_SIZES.find((s) => s.key === effPenSizeKey.value)
   return s ? s.px : PEN_WIDTH
 }
 
 function eraserSizePx() {
-  const s = ERASER_SIZES.find((s) => s.key === eraserSize.value)
+  const s = ERASER_SIZES.find((s) => s.key === effEraserSizeKey.value)
   return s ? s.px : ERASER_WIDTH
 }
 
@@ -201,10 +212,10 @@ function onDown(e) {
   if (e.button !== 0) return
   drawing.value = {
     tool: tool.value,
-    mode: tool.value === 'eraser' ? eraserMode.value : null,
+    mode: tool.value === 'eraser' ? effEraserMode.value : null,
     points: [pos(e)],
     lineWidth: tool.value === 'eraser' ? eraserSizePx() : penSizePx(),
-    color: penColor.value
+    color: effPenColor.value
   }
 }
 
@@ -268,8 +279,8 @@ function cloneForIPC(arr) {
 }
 
 async function persist() {
-  if (!pro.value) {
-    // 普通版：仅保存到会话内存，不落库（交卷后由使用方 clearSessionDrafts 清除）
+  if (!memoryOn.value) {
+    // 记忆功能未启用：仅保存到会话内存，不落库（交卷后由使用方 clearSessionDrafts 清除）
     sessionDraftCache.set(draftKey(), cloneForIPC(strokes.value))
     return
   }
@@ -303,8 +314,9 @@ function clear() {
   strokes.value = []
   redoStack.value = []
   redraw()
-  if (pro.value) api.clearDraft(props.questionId).catch(() => {})
-  else sessionDraftCache.delete(draftKey())
+  // 无论记忆功能是否启用都尝试清除落库草稿（记忆关闭时只清会话内存即可，清库为兜底）
+  sessionDraftCache.delete(draftKey())
+  api.clearDraft(props.questionId).catch(() => {})
   toast.success('草稿已清空')
 }
 
@@ -322,8 +334,8 @@ function onKey(e) {
 }
 
 async function loadDraft() {
-  if (!pro.value) {
-    // 普通版：只恢复本次会话内存中的笔迹，不读取数据库
+  if (!memoryOn.value) {
+    // 记忆功能未启用：只恢复本次会话内存中的笔迹，不读取数据库
     strokes.value = sessionDraftCache.get(draftKey()) || []
     redraw()
     return
@@ -410,57 +422,65 @@ watch(() => props.open, async (v) => {
         </svg>
       </button>
 
-      <!-- 画笔设置：粗细 / 颜色（进阶版专属） -->
-      <div v-if="pro && tool === 'pen'" class="tool-settings">
-        <div class="ts-label">粗细</div>
-        <div class="ts-row">
-          <button
-            v-for="s in PEN_SIZES"
-            :key="s.key"
-            class="ts-btn ts-size"
-            :class="{ active: penSize === s.key }"
-            :title="s.label + ' ' + s.px + 'px'"
-            @click="setPenSize(s.key)"
-          >
-            <span class="ts-line" :style="{ height: s.px + 'px' }"></span>
-          </button>
-        </div>
-        <div class="ts-label">颜色</div>
-        <div class="ts-colors">
-          <button
-            v-for="c in PEN_COLORS"
-            :key="c"
-            class="ts-swatch"
-            :class="{ active: penColor === c }"
-            :style="{ background: c }"
-            :title="c"
-            @click="setPenColor(c)"
-          ></button>
-        </div>
+      <!-- 画笔设置：粗细 / 颜色（随进阶子功能开关显隐） -->
+      <div v-if="pro && tool === 'pen' && (brushSizeOn || brushColorOn)" class="tool-settings">
+        <template v-if="brushSizeOn">
+          <div class="ts-label">粗细</div>
+          <div class="ts-row">
+            <button
+              v-for="s in PEN_SIZES"
+              :key="s.key"
+              class="ts-btn ts-size"
+              :class="{ active: penSize === s.key }"
+              :title="s.label + ' ' + s.px + 'px'"
+              @click="setPenSize(s.key)"
+            >
+              <span class="ts-line" :style="{ height: s.px + 'px' }"></span>
+            </button>
+          </div>
+        </template>
+        <template v-if="brushColorOn">
+          <div class="ts-label">颜色</div>
+          <div class="ts-colors">
+            <button
+              v-for="c in PEN_COLORS"
+              :key="c"
+              class="ts-swatch"
+              :class="{ active: penColor === c }"
+              :style="{ background: c }"
+              :title="c"
+              @click="setPenColor(c)"
+            ></button>
+          </div>
+        </template>
       </div>
 
-      <!-- 橡皮设置：粗细 / 擦除方式（进阶版专属） -->
-      <div v-else-if="pro && tool === 'eraser'" class="tool-settings">
-        <div class="ts-label">粗细</div>
-        <div class="ts-row">
-          <button
-            v-for="s in ERASER_SIZES"
-            :key="s.key"
-            class="ts-btn ts-size"
-            :class="{ active: eraserSize === s.key }"
-            :title="s.label + ' ' + s.px + 'px'"
-            @click="setEraserSize(s.key)"
-          >
-            <span class="ts-dot" :style="{ width: s.dot + 'px', height: s.dot + 'px' }"></span>
+      <!-- 橡皮设置：粗细 / 擦除方式（随进阶子功能开关显隐） -->
+      <div v-else-if="pro && tool === 'eraser' && (eraserSizeOn || eraserModeOn)" class="tool-settings">
+        <template v-if="eraserSizeOn">
+          <div class="ts-label">粗细</div>
+          <div class="ts-row">
+            <button
+              v-for="s in ERASER_SIZES"
+              :key="s.key"
+              class="ts-btn ts-size"
+              :class="{ active: eraserSize === s.key }"
+              :title="s.label + ' ' + s.px + 'px'"
+              @click="setEraserSize(s.key)"
+            >
+              <span class="ts-dot" :style="{ width: s.dot + 'px', height: s.dot + 'px' }"></span>
+            </button>
+          </div>
+        </template>
+        <template v-if="eraserModeOn">
+          <div class="ts-label">擦除方式</div>
+          <button class="ts-btn ts-mode" :class="{ active: eraserMode === 'pixel' }" @click="setEraserMode('pixel')">
+            像素擦除
           </button>
-        </div>
-        <div class="ts-label">擦除方式</div>
-        <button class="ts-btn ts-mode" :class="{ active: eraserMode === 'pixel' }" @click="setEraserMode('pixel')">
-          像素擦除
-        </button>
-        <button class="ts-btn ts-mode" :class="{ active: eraserMode === 'stroke' }" @click="setEraserMode('stroke')">
-          整笔擦除
-        </button>
+          <button class="ts-btn ts-mode" :class="{ active: eraserMode === 'stroke' }" @click="setEraserMode('stroke')">
+            整笔擦除
+          </button>
+        </template>
       </div>
 
       <button class="tool-btn exit" title="退出" @click="emit('close')">

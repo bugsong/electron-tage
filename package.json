@@ -1,6 +1,6 @@
 {
   "name": "tage",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "个人刷题笔记（数据仅本机使用）",
   "main": "./out/main/index.js",
   "private": true,

@@ -5,9 +5,12 @@ import { plainText } from '../utils/format'
 import QuestionFormModal from '../components/QuestionFormModal.vue'
 import ExcelImportModal from '../components/ExcelImportModal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import FilterBar from '../components/FilterBar.vue'
+import { useCategoryOptions } from '../composables/useCategoryOptions'
 import { useToastStore } from '../stores/toast'
 
 const toast = useToastStore()
+const { catOptions, rawTree, loadCats } = useCategoryOptions({ withTotal: true })
 
 const items = ref([])
 const total = ref(0)
@@ -18,12 +21,10 @@ const pageInput = ref('1')
 const loading = ref(false)
 const keyword = ref('')
 const categoryId = ref('')
-const catOptions = ref([])
 
 const formFor = ref(null)
 const importOpen = ref(false)
 const deleteFor = ref(null)
-const rawTree = ref([])
 
 // 管理模式（勾选批量删除）
 const manageMode = ref(false)
@@ -36,19 +37,6 @@ const allCurrentSelected = computed(
 )
 
 let pageSizeTimer = null
-
-async function loadCats() {
-  try {
-    const tree = await api.categoryTree()
-    rawTree.value = tree
-    const flat = []
-    for (const n of tree) {
-      flat.push({ id: n.id, name: n.name, total: n.total })
-      for (const c of n.children) flat.push({ id: c.id, name: `${n.name} › ${c.name}`, total: c.total })
-    }
-    catOptions.value = flat
-  } catch {}
-}
 
 async function load() {
   loading.value = true
@@ -201,34 +189,31 @@ onBeforeUnmount(() => clearTimeout(pageSizeTimer))
       </div>
     </div>
 
-    <div class="filter-bar">
-      <input
-        v-model="keyword"
-        class="input filter-search"
-        placeholder="搜索题干…"
-        @keyup.enter="search"
-      />
-      <select v-model="categoryId" class="select filter-cat" @change="search()">
-        <option value="">全部分类（共 {{ total }} 题）</option>
-        <option v-for="c in catOptions" :key="c.id" :value="c.id">{{ c.name }}（{{ c.total }}）</option>
-      </select>
-      <button class="btn" @click="search">搜索</button>
-      <button class="btn" @click="resetFilters">重置</button>
-
-      <div class="qm-ctl">
-        <span class="qm-ctl-label">每页</span>
-        <input
-          v-model="pageSizeInput"
-          type="number"
-          min="1"
-          class="input qm-size-input"
-          title="每页条数（默认10）"
-          @input="onPageSizeInput"
-        />
-        <span class="qm-ctl-label">条</span>
-        <button class="btn" :class="{ active: manageMode }" @click="toggleManage">管理</button>
-      </div>
-    </div>
+    <FilterBar
+      v-model:keyword="keyword"
+      v-model:categoryId="categoryId"
+      :cat-options="catOptions"
+      :with-total="true"
+      :all-label="`全部分类（共 ${total} 题）`"
+      @search="search"
+      @reset="resetFilters"
+    >
+      <template #extra>
+        <div class="qm-ctl">
+          <span class="qm-ctl-label">每页</span>
+          <input
+            v-model="pageSizeInput"
+            type="number"
+            min="1"
+            class="input qm-size-input"
+            title="每页条数（默认10）"
+            @input="onPageSizeInput"
+          />
+          <span class="qm-ctl-label">条</span>
+          <button class="btn" :class="{ active: manageMode }" @click="toggleManage">管理</button>
+        </div>
+      </template>
+    </FilterBar>
 
     <div class="card qm-list">
       <div v-if="!items.length && !loading" class="empty">
@@ -323,18 +308,6 @@ onBeforeUnmount(() => clearTimeout(pageSizeTimer))
 .qm-actions {
   display: flex;
   gap: 0.6rem;
-}
-.filter-bar {
-  display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-}
-.filter-search {
-  width: 16rem;
-}
-.filter-cat {
-  width: 15rem;
 }
 .qm-ctl {
   display: flex;

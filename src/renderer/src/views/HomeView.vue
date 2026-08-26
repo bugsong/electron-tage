@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import CustomComposeModal from '../components/CustomComposeModal.vue'
+import { barPercent } from '../utils/session'
 import { useToastStore } from '../stores/toast'
 
 const router = useRouter()
@@ -65,11 +66,6 @@ function onComposeStarted(sessionId) {
 
 function goCategory(id) {
   router.push({ path: '/practice', query: { expand: id } })
-}
-
-function barPercent(node) {
-  if (!node.total) return 0
-  return Math.round((node.done / node.total) * 100)
 }
 </script>
 

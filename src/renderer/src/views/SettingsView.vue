@@ -2,10 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api'
 import { useSettingsStore, FONT_SIZES } from '../stores/settings'
+import { useAdvancedStore, FEATURE_GROUPS } from '../stores/advanced'
 import { useToastStore } from '../stores/toast'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 
 const settings = useSettingsStore()
+const advanced = useAdvancedStore()
 const toast = useToastStore()
 const dbPath = ref('')
 const moving = ref(false)
@@ -28,6 +31,12 @@ onMounted(async () => {
     licensed.value = !!(s && s.activated)
   } catch {
     licensed.value = false
+  }
+  // 加载进阶功能开关状态（授权 + 各子功能开关）
+  try {
+    await advanced.load()
+  } catch {
+    /* 保持默认 */
   }
   if (!licensed.value) loadMachineCode()
 })
@@ -159,6 +168,46 @@ function applyMoveResult(info) {
       </div>
     </div>
 
+    <!-- 进阶功能控制：仅进阶版激活后可见 -->
+    <div v-if="advanced.licensed" class="card st-card adv-card">
+      <div class="st-title">进阶功能控制</div>
+      <div class="st-desc">进阶版专属。关闭总开关后，以下所有进阶能力将立即回到普通版表现</div>
+
+      <!-- 总开关 -->
+      <div class="adv-row">
+        <div class="adv-row-main">
+          <div class="adv-row-title">启用进阶版功能</div>
+          <div class="adv-row-sub">总开关：统一管理以下所有进阶模块</div>
+        </div>
+        <ToggleSwitch
+          :model-value="advanced.master"
+          @update:model-value="advanced.toggleMaster()"
+        />
+      </div>
+
+      <div v-if="!advanced.advancedOn" class="adv-banner">
+        总开关已关闭，以下进阶模块当前均不可用
+      </div>
+
+      <div class="adv-divider"></div>
+
+      <!-- 各分组 -->
+      <template v-for="g in FEATURE_GROUPS" :key="g.group">
+        <div class="adv-group-title">{{ g.group }}</div>
+        <div v-for="item in g.items" :key="item.key" class="adv-row">
+          <div class="adv-row-main">
+            <div class="adv-row-title">{{ item.label }}</div>
+            <div class="adv-row-sub">{{ item.desc }}</div>
+          </div>
+          <ToggleSwitch
+            :model-value="advanced.advancedOn && advanced.features[item.key]"
+            :disabled="!advanced.advancedOn"
+            @update:model-value="advanced.toggleFeature(item.key)"
+          />
+        </div>
+      </template>
+    </div>
+
     <div class="card st-card">
       <div class="st-title">数据位置</div>
       <div class="st-desc">全部数据（题库、错题、笔记、收藏、草稿笔迹）保存在下面的 SQLite 文件中，请勿删除</div>
@@ -196,7 +245,8 @@ function applyMoveResult(info) {
 
 <style scoped>
 .st-page {
-  max-width: 620px;
+  /* 与 .page 一致：不再固定 620px，随屏幕自适应铺满，最大态不限制 */
+  max-width: none;
 }
 .st-card {
   padding: 1.1rem 1.3rem;
@@ -272,5 +322,48 @@ function applyMoveResult(info) {
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: text;
+}
+/* ---- 进阶功能控制 ---- */
+.adv-card {
+  padding-bottom: 1.1rem;
+}
+.adv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+}
+.adv-row-main {
+  min-width: 0;
+}
+.adv-row-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.adv-row-sub {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  margin-top: 0.1rem;
+}
+.adv-group-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0.4rem 0 0.1rem;
+}
+.adv-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.7rem 0 0.4rem;
+}
+.adv-banner {
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  background: var(--card-hover);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.8rem;
 }
 </style>

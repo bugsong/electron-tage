@@ -3,28 +3,18 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtTime, plainText } from '../utils/format'
+import FilterBar from '../components/FilterBar.vue'
+import { useCategoryOptions } from '../composables/useCategoryOptions'
 import { useToastStore } from '../stores/toast'
 
 const router = useRouter()
 const toast = useToastStore()
+const { catOptions, loadCats } = useCategoryOptions({ indent: true })
 
 const items = ref([])
 const loading = ref(true)
 const keyword = ref('')
 const categoryId = ref('')
-const catOptions = ref([])
-
-async function loadCats() {
-  try {
-    const tree = await api.categoryTree()
-    const flat = []
-    for (const n of tree) {
-      flat.push({ id: n.id, name: n.name })
-      for (const c of n.children) flat.push({ id: c.id, name: `　${n.name} › ${c.name}` })
-    }
-    catOptions.value = flat
-  } catch {}
-}
 
 async function load() {
   loading.value = true
@@ -82,20 +72,13 @@ function openReview(i) {
       <button class="btn btn-primary" :disabled="!items.length" @click="reviewFavorites">收藏练习</button>
     </div>
 
-    <div class="filter-bar">
-      <input
-        v-model="keyword"
-        class="input filter-search"
-        placeholder="搜索题干…"
-        @keyup.enter="search"
-      />
-      <select v-model="categoryId" class="select filter-cat" @change="load()">
-        <option value="">全部分类</option>
-        <option v-for="c in catOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
-      <button class="btn" @click="search">搜索</button>
-      <button class="btn" @click="keyword = ''; categoryId = ''; load()">重置</button>
-    </div>
+    <FilterBar
+      v-model:keyword="keyword"
+      v-model:categoryId="categoryId"
+      :cat-options="catOptions"
+      @search="search"
+      @reset="search"
+    />
 
     <div v-if="loading" class="empty">加载中…</div>
 
@@ -121,18 +104,6 @@ function openReview(i) {
 </template>
 
 <style scoped>
-.filter-bar {
-  display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-}
-.filter-search {
-  width: 16rem;
-}
-.filter-cat {
-  width: 13rem;
-}
 .fav-row {
   display: flex;
   align-items: center;

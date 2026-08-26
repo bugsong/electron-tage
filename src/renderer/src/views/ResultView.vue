@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { fmtDuration, plainText } from '../utils/format'
+import { sessionOrigin } from '../utils/session'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
@@ -24,12 +25,7 @@ const correctRate = computed(() =>
     : 0
 )
 
-const origin = computed(() => {
-  const t = session.value && session.value.type
-  if (t === 'wrong_review') return '/wrong'
-  if (t === 'favorite') return '/favorites'
-  return '/practice'
-})
+const origin = computed(() => sessionOrigin(session.value && session.value.type))
 
 async function load() {
   const id = route.query.sessionId

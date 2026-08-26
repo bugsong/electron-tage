@@ -203,6 +203,21 @@ async function verifyActivationCode(code) {
   return { ok: true, activatedAt, expiresAt }
 }
 
+/**
+ * 解除授权（删除数据库中的激活信息）：
+ * 清除 settings 表里 license.state 这一行，进阶版即回退为普通版。
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+function deactivateLicense() {
+  try {
+    getDb().prepare("DELETE FROM settings WHERE key = 'license.state'").run()
+    return { ok: true }
+  } catch (err) {
+    console.error('[license] 解除授权失败:', err)
+    return { ok: false, reason: (err && err.message) || '数据库操作失败' }
+  }
+}
+
 /* ---------------- IPC 接口 ---------------- */
 
 /** 读取本地持久化的授权状态（供「关于」页展示；未激活或已过期视为未激活） */
@@ -233,6 +248,9 @@ function registerLicenseIpc() {
 
   // 返回本地持久化的授权状态 { activated, activatedAt?, expiresAt? }
   ipcMain.handle('license:status', () => getLicenseStatus())
+
+  // 解除授权：删除本机持久化的激活信息，进阶版回退为普通版
+  ipcMain.handle('license:deactivate', () => deactivateLicense())
 }
 
 /* ---------------- 测试专用钩子（生产代码不调用） ---------------- */
@@ -247,4 +265,4 @@ const _test = {
   cleanField
 }
 
-module.exports = { getMachineCode, verifyActivationCode, getLicenseStatus, registerLicenseIpc, _test }
+module.exports = { getMachineCode, verifyActivationCode, getLicenseStatus, deactivateLicense, registerLicenseIpc, _test }

@@ -4,11 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import CustomComposeModal from '../components/CustomComposeModal.vue'
 import Modal from '../components/Modal.vue'
+import { barPercent } from '../utils/session'
+import { useAdvancedStore } from '../stores/advanced'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
+const adv = useAdvancedStore()
 
 const tree = ref([])
 const loading = ref(true)
@@ -17,7 +20,6 @@ const composeOpen = ref(false)
 const practiceCount = ref(20)
 const clearTarget = ref(null)
 const clearing = ref(false)
-const licensed = ref(false)
 const timerChoice = ref(null)
 const timerLimitMin = ref(0)
 
@@ -56,8 +58,7 @@ async function load() {
     }
   } catch {}
   try {
-    const ls = await api.getLicenseStatus()
-    licensed.value = !!(ls && ls.activated)
+    await adv.load()
   } catch {}
 }
 onMounted(load)
@@ -67,12 +68,6 @@ function toggleExpand(id) {
   if (s.has(id)) s.delete(id)
   else s.add(id)
   expanded.value = s
-}
-
-/** 已做/未做进度百分比 */
-function barPercent(node) {
-  if (!node || !node.total) return 0
-  return Math.round((node.done / node.total) * 100)
 }
 
 async function goPractice(categoryId, name) {
@@ -91,7 +86,7 @@ async function goPractice(categoryId, name) {
       toast.success(r.message)
       return
     }
-    if (licensed.value) {
+    if (adv.isOn('countdown')) {
       timerChoice.value = { sessionId: r.id, count: r.total }
       timerLimitMin.value = Math.min(180, Math.max(1, r.total * 2))
     } else {

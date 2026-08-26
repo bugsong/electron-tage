@@ -2,17 +2,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import Modal from './Modal.vue'
+import { useAdvancedStore } from '../stores/advanced'
 import { useToastStore } from '../stores/toast'
 
 const emit = defineEmits(['close', 'started'])
 const toast = useToastStore()
+const adv = useAdvancedStore()
 
 const tree = ref([])
 const expanded = ref(new Set())
 const selected = ref(new Set())
 const count = ref(10)
 const starting = ref(false)
-const licensed = ref(false)
 const timerChoice = ref(null)
 const timerLimitMin = ref(0)
 
@@ -31,8 +32,7 @@ async function load() {
     }
   } catch {}
   try {
-    const ls = await api.getLicenseStatus()
-    licensed.value = !!(ls && ls.activated)
+    await adv.load()
   } catch {}
 }
 onMounted(load)
@@ -123,7 +123,7 @@ async function start() {
       toast.success(r.message)
       return
     }
-    if (licensed.value) {
+    if (adv.isOn('countdown')) {
       timerChoice.value = { sessionId: r.id, count: r.total }
       timerLimitMin.value = Math.min(180, Math.max(1, r.total * 2))
     } else {

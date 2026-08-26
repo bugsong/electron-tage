@@ -103,7 +103,10 @@ a {
 }
 
 .page {
-  max-width: 980px;
+  /* 不写死最大宽度：随窗口（屏幕）放大而自适应铺满，最大态不限制 */
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   margin: 0 auto;
 }
 

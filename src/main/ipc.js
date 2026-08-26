@@ -98,6 +98,24 @@ function buildCategoryTree() {
   return roots
 }
 
+/* ---------------- 级联删除 ---------------- */
+
+/**
+ * 删除一道题时，级联清理其错题记录 / 收藏 / 笔记 / 草稿 / 答题进度。
+ * 前端删除提示与 PRD 均承诺「一并清除」，此前 question:delete 仅删 questions 表，会留下孤儿数据。
+ */
+function cascadeDeleteQuestion(db, id) {
+  const del = db.transaction(() => {
+    db.prepare('DELETE FROM wrong_records WHERE question_id = ?').run(id)
+    db.prepare('DELETE FROM favorites WHERE question_id = ?').run(id)
+    db.prepare('DELETE FROM notes WHERE question_id = ?').run(id)
+    db.prepare('DELETE FROM drafts WHERE question_id = ?').run(id)
+    db.prepare('DELETE FROM question_progress WHERE question_id = ?').run(id)
+    db.prepare('DELETE FROM questions WHERE id = ?').run(id)
+  })
+  del()
+}
+
 /* ---------------- 分类 ---------------- */
 
 function registerCategoryHandlers() {
@@ -163,7 +181,7 @@ function registerQuestionHandlers() {
   })
 
   ipcMain.handle('question:delete', (e, id) => {
-    getDb().prepare('DELETE FROM questions WHERE id = ?').run(id)
+    cascadeDeleteQuestion(getDb(), id)
     return { ok: true }
   })
 
@@ -172,9 +190,21 @@ function registerQuestionHandlers() {
     const list = Array.isArray(ids) ? ids.filter((id) => Number.isFinite(Number(id))) : []
     if (!list.length) return { ok: true, deleted: 0 }
     const db = getDb()
-    const del = db.prepare('DELETE FROM questions WHERE id = ?')
     const run = db.transaction((all) => {
-      for (const id of all) del.run(id)
+      const delWrong = db.prepare('DELETE FROM wrong_records WHERE question_id = ?')
+      const delFav = db.prepare('DELETE FROM favorites WHERE question_id = ?')
+      const delNote = db.prepare('DELETE FROM notes WHERE question_id = ?')
+      const delDraft = db.prepare('DELETE FROM drafts WHERE question_id = ?')
+      const delProg = db.prepare('DELETE FROM question_progress WHERE question_id = ?')
+      const delQ = db.prepare('DELETE FROM questions WHERE id = ?')
+      for (const id of all) {
+        delWrong.run(id)
+        delFav.run(id)
+        delNote.run(id)
+        delDraft.run(id)
+        delProg.run(id)
+        delQ.run(id)
+      }
     })
     run(list)
     return { ok: true, deleted: list.length }
@@ -739,7 +769,15 @@ function registerSettingsHandlers() {
       // 侧边栏抽屉状态（'1' 收起）
       sidebarCollapsed: map.sidebarCollapsed || '0',
       // 练习题量（5-50，默认 20）
-      practiceCount: map.practiceCount || ''
+      practiceCount: map.practiceCount || '',
+      // 进阶功能开关（默认：总开关开；记忆功能关、橡皮粗细关，其余开）
+      advMaster: map.advMaster == null ? '1' : map.advMaster,
+      advMemory: map.advMemory == null ? '0' : map.advMemory,
+      advBrushColor: map.advBrushColor == null ? '1' : map.advBrushColor,
+      advBrushSize: map.advBrushSize == null ? '1' : map.advBrushSize,
+      advEraserSize: map.advEraserSize == null ? '0' : map.advEraserSize,
+      advEraserMode: map.advEraserMode == null ? '1' : map.advEraserMode,
+      advCountdown: map.advCountdown == null ? '1' : map.advCountdown
     }
   })
 
