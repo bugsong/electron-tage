@@ -6,6 +6,22 @@ import UpdateBlock from '../components/UpdateBlock.vue'
 
 const toast = useToastStore()
 
+const showWechat = ref(false)
+const wechatId = 'zaozhuangqiuzhi'
+
+function toggleWechat() {
+  showWechat.value = !showWechat.value
+}
+
+async function copyWechat() {
+  try {
+    await navigator.clipboard.writeText(wechatId)
+    toast.success('已复制微信号')
+  } catch {
+    toast.error('复制失败')
+  }
+}
+
 // 授权状态：{ activated, activatedAt?, expiresAt? }
 const status = ref({ activated: false })
 const code = ref('')
@@ -72,6 +88,19 @@ async function activate() {
 <template>
   <div class="page about-page">
     <span class="page-title-tag">关于</span>
+
+    <div class="card st-card">
+      <div class="st-title">压力开发者₍•ʚ•₎•ʚ•₎•ʚ•₎</div>
+      <div class="st-desc">🛰微信：
+        <span @click="toggleWechat" class="wechat-toggle">
+          {{ showWechat ? wechatId : '***********' }}
+        </span>
+        <button v-if="showWechat" class="btn btn-sm" @click="copyWechat">复制</button>
+      </div>
+      <!-- 浅色字体写点东西 -->
+      <div class="st-desc st-desc-note">提点新功能；催TA修BUG；用爽了，请TA喝咖啡；进阶码营业中。。。</div>
+
+    </div>
 
     <div class="card st-card">
       <div class="st-title">授权进阶版</div>
@@ -153,6 +182,10 @@ async function activate() {
   font-weight: 700;
   font-size: 1rem;
 }
+.about-cmp .st-title {
+  text-align: center;
+  margin-bottom: 0.8rem;
+}
 .st-desc {
   color: var(--text-2);
   font-size: 0.85rem;
@@ -168,6 +201,18 @@ async function activate() {
   color: var(--text-2);
   font-size: 0.8rem;
   margin-top: 1.2rem;
+}
+
+.wechat-toggle {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text);
+}
+
+.btn-sm {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  margin-left: 0.4rem;
 }
 
 /* 授权输入区 */
