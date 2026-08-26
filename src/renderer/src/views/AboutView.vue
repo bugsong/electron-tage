@@ -31,18 +31,23 @@ const activating = ref(false)
 const FEATURES = [
   {
     name: '记忆功能',
-    normal: '当场做完就翻篇了，不保留当时的做题思路',
-    pro: '持久保留做题痕迹，方便回顾当时的思路细节'
+    normal: '做完即过，不保留做题痕迹',
+    pro: '持久保留做题痕迹，随时回顾思路细节'
   },
   {
     name: '笔迹',
-    normal: '画笔仅有红色，不可调整粗细',
-    pro: '可以调整粗细、颜色，并记忆上次状态'
+    normal: '仅红色画笔，不可调粗细颜色',
+    pro: '粗细颜色自由调，记忆上次状态'
   },
   {
     name: '橡皮',
-    normal: '像素擦除，没有提示圈，擦多了影响心态',
-    pro: '支持像素擦除和整笔擦除，有擦除范围拖影不会多擦，舒心刷题'
+    normal: '仅像素擦除，无范围提示，容易多擦',
+    pro: '像素擦除 + 整笔擦除，带范围提示，舒心刷题'
+  },
+  {
+    name: '倒计时',
+    normal: '仅正计时，自由掌控节奏',
+    pro: '倒计时限定作答，到点自动交卷，沉浸专注'
   }
 ]
 
@@ -104,7 +109,7 @@ async function activate() {
 
     <div class="card st-card">
       <div class="st-title">授权进阶版</div>
-      <div class="st-desc">解锁草纸进阶版全部能力</div>
+      <div class="st-desc">解锁进阶版全部能力（草纸 + 倒计时）</div>
 
       <!-- 已激活：输入框消失，显示金色提示 -->
       <div v-if="activated" class="license-active">
@@ -173,6 +178,7 @@ async function activate() {
 <style scoped>
 .about-page {
   max-width: 620px;
+  margin: 0 auto;
 }
 .st-card {
   padding: 1.1rem 1.3rem;
@@ -260,8 +266,8 @@ async function activate() {
 .feat-table td {
   border: 1px solid var(--border);
   padding: 0.55rem 0.7rem;
-  text-align: left;
-  vertical-align: top;
+  text-align: center;
+  vertical-align: middle;
   line-height: 1.6;
 }
 .feat-table th {

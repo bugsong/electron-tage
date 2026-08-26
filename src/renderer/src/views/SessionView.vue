@@ -18,6 +18,7 @@ const questions = ref([])
 const answers = ref([])
 const favorites = ref(new Set())
 const elapsedMs = ref(0)
+const remainingMs = ref(0)
 const paused = ref(false)
 const loading = ref(true)
 
@@ -32,6 +33,7 @@ const removedQuestionIds = new Set()
 let timer = null
 let tick = 0
 let debounceTimer = null
+let submitting = false
 
 const origin = computed(() => {
   const t = session.value && session.value.type
@@ -42,7 +44,8 @@ const origin = computed(() => {
 
 const answeredCount = computed(() => answers.value.filter((a) => a != null).length)
 const unAnsweredCount = computed(() => questions.value.length - answeredCount.value)
-const displayTime = computed(() => fmtDuration(elapsedMs.value))
+const isCountdown = computed(() => session.value && session.value.timerMode === 'countdown')
+const displayTime = computed(() => fmtDuration(isCountdown.value ? remainingMs.value : elapsedMs.value))
 
 async function load() {
   const id = route.query.sessionId
@@ -63,6 +66,9 @@ async function load() {
         ? s.answers
         : new Array(s.questions.length).fill(null)
     elapsedMs.value = s.durationMs || 0
+    if (s.timerMode === 'countdown' && s.timerLimitMs > 0) {
+      remainingMs.value = Math.max(0, s.timerLimitMs - elapsedMs.value)
+    }
     try {
       const favs = await api.listFavorites()
       favorites.value = new Set(favs.map((f) => f.questionId))
@@ -81,12 +87,22 @@ onMounted(load)
 function startTimer() {
   timer = setInterval(() => {
     elapsedMs.value += 1000
+    if (isCountdown.value) {
+      remainingMs.value -= 1000
+      if (remainingMs.value <= 0) {
+        remainingMs.value = 0
+        clearInterval(timer)
+        timer = null
+        autoSubmit()
+      }
+    }
     tick++
     if (tick % 10 === 0) persist()
   }, 1000)
 }
 
 function togglePause() {
+  if (isCountdown.value) return
   if (paused.value) {
     paused.value = false
     startTimer()
@@ -96,6 +112,11 @@ function togglePause() {
     timer = null
     persist()
   }
+}
+
+async function autoSubmit() {
+  toast.show('时间到，自动交卷', 'info')
+  await doSubmit()
 }
 
 function persist() {
@@ -114,6 +135,11 @@ function debouncedPersist() {
 watch(answers, debouncedPersist, { deep: true })
 
 onBeforeRouteLeave(() => {
+  if (submitting) return true
+  if (isCountdown.value) {
+    toast.show('再坚持一下吧~', 'info')
+    return false
+  }
   persist()
 })
 
@@ -146,8 +172,13 @@ function askSubmit() {
   confirmSubmit.value = true
 }
 
+function askAbandon() {
+  confirmAbandon.value = true
+}
+
 async function doSubmit() {
   confirmSubmit.value = false
+  submitting = true
   try {
     // 转换为普通数组，避免 IPC 克隆错误
     const plainAnswers = JSON.parse(JSON.stringify(toRaw(answers.value)))
@@ -156,17 +187,23 @@ async function doSubmit() {
     clearSessionDrafts('session:' + session.value.id)
     router.push({ path: '/practice/result', query: { sessionId: session.value.id } })
   } catch (err) {
+    submitting = false
     toast.error('交卷失败：' + (err.message || err))
   }
 }
 
 function leave() {
+  if (isCountdown.value) {
+    toast.show('再坚持一下吧~', 'info')
+    return
+  }
   persist()
   router.push(origin.value)
 }
 
 async function doAbandon() {
   confirmAbandon.value = false
+  submitting = true
   try {
     await api.abandonPractice(session.value.id)
     // 普通版：放弃后同样清除本次会话的内存笔迹
@@ -174,6 +211,7 @@ async function doAbandon() {
     toast.success('已放弃本次练习，进度已清除')
     router.replace(origin.value)
   } catch (err) {
+    submitting = false
     toast.error('操作失败：' + (err.message || err))
   }
 }
@@ -204,7 +242,7 @@ function isRemoved(q) {
   <div class="session-page">
     <div class="session-topbar">
       <button class="btn btn-text" title="保存进度并返回" @click="leave">← 返回</button>
-      <span class="session-timer" :class="{ paused: paused }">
+      <span class="session-timer" :class="{ paused: paused, countdown: isCountdown }">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="13" r="8" />
           <path d="M12 9v4l2.5 2.5" />
@@ -212,7 +250,7 @@ function isRemoved(q) {
         </svg>
         {{ displayTime }}
       </span>
-      <button class="btn btn-text pause-btn" @click="togglePause">{{ paused ? '继续' : '暂停' }}</button>
+      <button v-if="!isCountdown" class="btn btn-text pause-btn" @click="togglePause">{{ paused ? '继续' : '暂停' }}</button>
       <h1 class="session-title">{{ session && session.title }}</h1>
       <span class="session-count">{{ answeredCount }}/{{ session && session.total }}</span>
       <button class="icon-btn" title="显示设置" @click="settingsOpen = true">
@@ -222,7 +260,7 @@ function isRemoved(q) {
         </svg>
       </button>
       <button class="btn btn-primary" :disabled="!questions.length" @click="askSubmit">交卷</button>
-      <button class="btn btn-danger" :disabled="!questions.length" @click="confirmAbandon = true">放弃</button>
+      <button class="btn btn-danger" :disabled="!questions.length" @click="askAbandon">放弃</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -315,6 +353,10 @@ function isRemoved(q) {
 }
 .session-timer.paused {
   color: var(--primary);
+}
+.session-timer.countdown {
+  color: var(--danger);
+  font-weight: 700;
 }
 .pause-btn {
   font-size: 0.85rem;

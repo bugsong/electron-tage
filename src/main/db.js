@@ -290,6 +290,15 @@ function createSchema() {
       value TEXT NOT NULL
     );
   `)
+
+  // 迁移：为 practice_sessions 添加计时模式字段
+  const cols = db.prepare('PRAGMA table_info(practice_sessions)').all()
+  if (!cols.some((c) => c.name === 'timer_mode')) {
+    db.exec("ALTER TABLE practice_sessions ADD COLUMN timer_mode TEXT NOT NULL DEFAULT 'forward'")
+  }
+  if (!cols.some((c) => c.name === 'timer_limit_ms')) {
+    db.exec('ALTER TABLE practice_sessions ADD COLUMN timer_limit_ms INTEGER NOT NULL DEFAULT 0')
+  }
 }
 
 /* ---------------- 种子数据 ---------------- */

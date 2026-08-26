@@ -469,6 +469,8 @@ function getSession(sessionId) {
     total: s.total,
     correct: s.correct,
     durationMs: s.duration_ms,
+    timerMode: s.timer_mode || 'forward',
+    timerLimitMs: s.timer_limit_ms || 0,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
     questions: loadQuestionsInOrder(questionIds),
@@ -500,7 +502,7 @@ function registerPracticeHandlers() {
   ipcMain.handle('practice:getSession', (e, id) => getSession(id))
 
   ipcMain.handle('practice:start', (e, payload = {}) => {
-    const { type = 'special', title = '练习', categoryIds = [], count = 20, wrongCategoryId = null } = payload
+    const { type = 'special', title = '练习', categoryIds = [], count = 20, wrongCategoryId = null, timerMode = 'forward', timerLimitMs = 0 } = payload
     const db = getDb()
     // 互斥锁：已有进行中的会话时不允许创建新会话
     const active = db
@@ -559,11 +561,11 @@ function registerPracticeHandlers() {
     const t = now()
     const r = db
       .prepare(
-        `INSERT INTO practice_sessions (type, title, status, total, duration_ms, questions_json, created_at, updated_at)
-         VALUES (?, ?, 'in_progress', ?, 0, ?, ?, ?)`
+        `INSERT INTO practice_sessions (type, title, status, total, duration_ms, questions_json, created_at, updated_at, timer_mode, timer_limit_ms)
+         VALUES (?, ?, 'in_progress', ?, 0, ?, ?, ?, ?, ?)`
       )
-      .run(type, title, ids.length, JSON.stringify(ids), t, t)
-    return { id: Number(r.lastInsertRowid) }
+      .run(type, title, ids.length, JSON.stringify(ids), t, t, timerMode, Math.max(0, timerLimitMs || 0))
+    return { id: Number(r.lastInsertRowid), total: ids.length }
   })
 
   ipcMain.handle('practice:saveProgress', (e, sessionId, answers, elapsedMs) => {
@@ -628,6 +630,14 @@ function registerPracticeHandlers() {
     db.prepare(
       `UPDATE practice_sessions SET status = 'abandoned', updated_at = ? WHERE status = 'in_progress' AND id != ?`
     ).run(t, sessionId)
+    return { ok: true }
+  })
+
+  // 更新会话计时模式（正计时/倒计时）
+  ipcMain.handle('practice:updateTimer', (e, sessionId, mode, limitMs) => {
+    getDb()
+      .prepare("UPDATE practice_sessions SET timer_mode = ?, timer_limit_ms = ? WHERE id = ? AND status = 'in_progress'")
+      .run(mode || 'forward', Math.max(0, limitMs || 0), sessionId)
     return { ok: true }
   })
 

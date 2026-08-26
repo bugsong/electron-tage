@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import CustomComposeModal from '../components/CustomComposeModal.vue'
@@ -17,6 +17,24 @@ const composeOpen = ref(false)
 const practiceCount = ref(20)
 const clearTarget = ref(null)
 const clearing = ref(false)
+const licensed = ref(false)
+const timerChoice = ref(null)
+const timerLimitMin = ref(0)
+
+function onLimitInput() {
+  const n = Number(timerLimitMin.value)
+  if (!Number.isFinite(n)) {
+    timerLimitMin.value = Math.min(180, Math.max(1, (timerChoice.value && timerChoice.value.count || 10) * 2))
+    return
+  }
+  if (n < 1) {
+    toast.error('倒计时不能少于 1 分钟')
+    timerLimitMin.value = 1
+  } else if (n > 180) {
+    toast.error('倒计时不能超过 180 分钟')
+    timerLimitMin.value = 180
+  }
+}
 
 async function load() {
   loading.value = true
@@ -36,6 +54,10 @@ async function load() {
       const n = Number(s.practiceCount)
       if (Number.isFinite(n) && n >= 5 && n <= 50) practiceCount.value = n
     }
+  } catch {}
+  try {
+    const ls = await api.getLicenseStatus()
+    licensed.value = !!(ls && ls.activated)
   } catch {}
 }
 onMounted(load)
@@ -69,10 +91,38 @@ async function goPractice(categoryId, name) {
       toast.success(r.message)
       return
     }
-    router.push({ path: '/practice/session', query: { sessionId: r.id } })
+    if (licensed.value) {
+      timerChoice.value = { sessionId: r.id, count: r.total }
+      timerLimitMin.value = Math.min(180, Math.max(1, r.total * 2))
+    } else {
+      router.push({ path: '/practice/session', query: { sessionId: r.id } })
+    }
   } catch (err) {
     toast.error(err.message || '开始练习失败')
   }
+}
+
+function cancelTimerChoice() {
+  if (timerChoice.value) {
+    api.abandonPractice(timerChoice.value.sessionId).catch(() => {})
+    timerChoice.value = null
+  }
+}
+
+function chooseForward() {
+  const sid = timerChoice.value.sessionId
+  timerChoice.value = null
+  router.push({ path: '/practice/session', query: { sessionId: sid } })
+}
+
+async function chooseCountdown() {
+  const sid = timerChoice.value.sessionId
+  const limitMin = timerLimitMin.value
+  timerChoice.value = null
+  try {
+    await api.updatePracticeTimer(sid, 'countdown', limitMin * 60 * 1000)
+  } catch {}
+  router.push({ path: '/practice/session', query: { sessionId: sid } })
 }
 
 function askClear(categoryId, name) {
@@ -189,6 +239,22 @@ function visibleChildren(node) {
         </button>
       </template>
     </Modal>
+
+    <Modal v-if="timerChoice" title="选择计时模式" width="30rem" @close="cancelTimerChoice">
+      <div class="tc-body">
+        <p class="tc-info">
+          本次抽取「<strong>{{ timerChoice.count }}</strong>」道题，限定倒计时：
+          <input type="number" min="1" max="180" v-model.number="timerLimitMin" @change="onLimitInput" class="tc-limit-input" />
+          分钟
+        </p>
+        <p class="tc-warn">请注意：倒计时模式不允许暂停！</p>
+      </div>
+      <template #footer>
+        <button class="btn" @click="cancelTimerChoice">取消</button>
+        <button class="btn" @click="chooseForward">正计时</button>
+        <button class="btn btn-primary" @click="chooseCountdown">倒计时</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -273,5 +339,33 @@ function visibleChildren(node) {
   font-size: 0.92rem;
   line-height: 1.7;
   color: var(--text);
+}
+.tc-body {
+  font-size: 0.92rem;
+  line-height: 1.8;
+}
+.tc-info {
+  margin: 0 0 0.5rem;
+}
+.tc-limit-input {
+  width: 4.5rem;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+  font-size: 1.05rem;
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  text-align: center;
+  background: var(--card);
+  font-family: inherit;
+}
+.tc-limit-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--danger-weak);
+}
+.tc-warn {
+  color: var(--text-2);
+  font-size: 0.82rem;
+  margin: 0;
 }
 </style>

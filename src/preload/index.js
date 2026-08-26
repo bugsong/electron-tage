@@ -41,6 +41,7 @@ const api = {
   submitPractice: (id, answers, elapsedMs) =>
     ipcRenderer.invoke('practice:submit', id, answers, elapsedMs),
   abandonPractice: (id) => ipcRenderer.invoke('practice:abandon', id),
+  updatePracticeTimer: (id, mode, limitMs) => ipcRenderer.invoke('practice:updateTimer', id, mode, limitMs),
   clearPracticeProgress: (categoryId) => ipcRenderer.invoke('practice:clearProgress', categoryId),
 
   // 图片（BLOB 存储）

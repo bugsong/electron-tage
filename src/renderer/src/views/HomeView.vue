@@ -2,9 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
-import { fmtTime, plainText } from '../utils/format'
 import CustomComposeModal from '../components/CustomComposeModal.vue'
-import QuestionDetailModal from '../components/QuestionDetailModal.vue'
 import { useToastStore } from '../stores/toast'
 
 const router = useRouter()
@@ -12,7 +10,6 @@ const toast = useToastStore()
 
 const stats = ref(null)
 const composeOpen = ref(false)
-const detailFor = ref(null)
 
 const greeting = computed(() => {
   const h = new Date().getHours()
@@ -160,39 +157,9 @@ function barPercent(node) {
           </button>
         </div>
       </div>
-
-      <div class="home-section">
-        <div class="home-section-head">
-          <h2>最近笔记</h2>
-          <button class="btn btn-text" @click="router.push('/notes')">全部笔记 ›</button>
-        </div>
-        <div class="card home-list">
-          <div
-            v-for="n in stats.recentNotes"
-            :key="n.questionId"
-            class="home-note"
-            @click="detailFor = n"
-          >
-            <div class="home-note-content">{{ n.plain || '（空笔记）' }}</div>
-            <div class="home-note-meta">
-              <span class="home-note-stem">{{ plainText(n.stem).slice(0, 60) }}</span>
-              <span class="home-note-time">{{ fmtTime(n.updatedAt) }}</span>
-            </div>
-          </div>
-          <div v-if="!stats.recentNotes.length" class="empty" style="padding: 1.2rem">
-            还没有笔记，做题时点卡片上的「笔记」写下心得
-          </div>
-        </div>
-      </div>
     </template>
 
     <CustomComposeModal v-if="composeOpen" @close="composeOpen = false" @started="onComposeStarted" />
-
-    <QuestionDetailModal
-      v-if="detailFor"
-      :question="{ id: detailFor.questionId, stem: detailFor.stem, options: [], answer: '', analysis: '' }"
-      @close="detailFor = null"
-    />
   </div>
 </template>
 
@@ -309,38 +276,5 @@ function barPercent(node) {
 .home-quick-label {
   font-size: 0.88rem;
   margin-top: 0.3rem;
-}
-.home-note {
-  padding: 0.75rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-}
-.home-note:last-child {
-  border-bottom: none;
-}
-.home-note:hover {
-  background: var(--card-hover);
-}
-.home-note-content {
-  font-size: 0.92rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-note-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  color: var(--text-2);
-  font-size: 0.8rem;
-  margin-top: 0.2rem;
-}
-.home-note-stem {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-note-time {
-  flex-shrink: 0;
 }
 </style>
