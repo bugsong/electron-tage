@@ -7,6 +7,7 @@ const { registerIpc } = require('./ipc')
 const { migrateImages, getImage } = require('./images')
 const { runE2eTest, runUiSmoke } = require('./e2e')
 const { initAntiDebug } = require('./anti-debug')
+const { checkLifecycle } = require('./lifecycle')
 
 // 反调试：必须在 app ready 之前完成启动参数扫描（L1 层）
 initAntiDebug()
@@ -93,6 +94,9 @@ app.whenReady().then(() => {
 
   registerIpc()
   createWindow()
+
+  // 生命周期检测：惰性、容错，不阻塞启动
+  checkLifecycle().catch(() => {})
 
   // 后台迁移历史图片（base64 / file:// → BLOB），不阻塞启动
   migrateImages()
