@@ -309,8 +309,8 @@ function isRemoved(q) {
 
 <style scoped>
 .session-page {
-  width: 100%;
-  max-width: none;
+  width: 85%;
+  max-width: 85%;
   min-width: 0;
   margin: 0 auto;
 }

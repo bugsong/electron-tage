@@ -188,8 +188,8 @@ function go(i) {
 
 <style scoped>
 .review-page {
-  width: 100%;
-  max-width: none;
+  width: 85%;
+  max-width: 85%;
   min-width: 0;
   margin: 0 auto;
 }

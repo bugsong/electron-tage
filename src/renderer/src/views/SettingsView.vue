@@ -205,6 +205,7 @@ function applyMoveResult(info) {
             @update:model-value="advanced.toggleFeature(item.key)"
           />
         </div>
+        <div class="adv-divider"></div>
       </template>
     </div>
 
@@ -223,7 +224,7 @@ function applyMoveResult(info) {
 
     <div v-if="!licensed" class="card st-card">
       <div class="st-title">设备唯一信息(已加密)</div>
-      <div class="st-desc">由本机硬件（CPUID、物理硬盘、BIOS）在本地加密生成，仅用于软件授权，不会上传；<br/>(进阶版约一杯奶茶价)请复制后发送给开发者生成进阶码</div>
+      <div class="st-desc">由本机硬件信息在本地加密生成，仅用于软件授权，不会上传；<br/>(进阶版约一杯奶茶价)请复制后发送给开发者生成进阶码</div>
       <div class="st-path">
         <span class="st-path-text">{{ mcFailed ? '获取失败' : machineCode || '获取中…' }}</span>
         <button class="btn" @click="copyMachineCode" :disabled="!machineCode">复制</button>
