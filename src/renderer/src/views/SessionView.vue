@@ -18,6 +18,7 @@ const questions = ref([])
 const answers = ref([])
 const favorites = ref(new Set())
 const elapsedMs = ref(0)
+const paused = ref(false)
 const loading = ref(true)
 
 const settingsOpen = ref(false)
@@ -83,6 +84,18 @@ function startTimer() {
     tick++
     if (tick % 10 === 0) persist()
   }, 1000)
+}
+
+function togglePause() {
+  if (paused.value) {
+    paused.value = false
+    startTimer()
+  } else {
+    paused.value = true
+    clearInterval(timer)
+    timer = null
+    persist()
+  }
 }
 
 function persist() {
@@ -191,7 +204,7 @@ function isRemoved(q) {
   <div class="session-page">
     <div class="session-topbar">
       <button class="btn btn-text" title="保存进度并返回" @click="leave">← 返回</button>
-      <span class="session-timer">
+      <span class="session-timer" :class="{ paused: paused }">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <circle cx="12" cy="13" r="8" />
           <path d="M12 9v4l2.5 2.5" />
@@ -199,6 +212,7 @@ function isRemoved(q) {
         </svg>
         {{ displayTime }}
       </span>
+      <button class="btn btn-text pause-btn" @click="togglePause">{{ paused ? '继续' : '暂停' }}</button>
       <h1 class="session-title">{{ session && session.title }}</h1>
       <span class="session-count">{{ answeredCount }}/{{ session && session.total }}</span>
       <button class="icon-btn" title="显示设置" @click="settingsOpen = true">
@@ -208,6 +222,7 @@ function isRemoved(q) {
         </svg>
       </button>
       <button class="btn btn-primary" :disabled="!questions.length" @click="askSubmit">交卷</button>
+      <button class="btn btn-danger" :disabled="!questions.length" @click="confirmAbandon = true">放弃</button>
     </div>
 
     <div v-if="loading" class="empty">加载中…</div>
@@ -217,7 +232,7 @@ function isRemoved(q) {
       <div>本次练习没有可用的题目（题目可能已被删除）</div>
     </div>
 
-    <div v-else class="session-body">
+    <div v-else class="session-body" :class="{ blurred: paused }">
       <QuestionCard
         v-for="(q, i) in questions"
         :key="q.id"
@@ -234,11 +249,11 @@ function isRemoved(q) {
       />
     </div>
 
+    <div v-if="paused && !loading && questions.length" class="pause-hint">⏸ 已暂停，点击「继续」恢复答题</div>
+
     <QuickSettingsModal
       v-if="settingsOpen"
-      show-abandon
       @close="settingsOpen = false"
-      @abandon="confirmAbandon = true"
     />
 
     <ConfirmDialog
@@ -297,6 +312,33 @@ function isRemoved(q) {
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   min-width: 4.6rem;
+}
+.session-timer.paused {
+  color: var(--primary);
+}
+.pause-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.session-body.blurred {
+  filter: blur(8px);
+  pointer-events: none;
+  user-select: none;
+}
+.pause-hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-2);
+  z-index: 40;
+  pointer-events: none;
+  background: var(--card);
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
 }
 .session-title {
   flex: 1;

@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import CustomComposeModal from '../components/CustomComposeModal.vue'
+import Modal from '../components/Modal.vue'
 import { useToastStore } from '../stores/toast'
 
 const route = useRoute()
@@ -13,6 +14,9 @@ const tree = ref([])
 const loading = ref(true)
 const expanded = ref(new Set())
 const composeOpen = ref(false)
+const practiceCount = ref(20)
+const clearTarget = ref(null)
+const clearing = ref(false)
 
 async function load() {
   loading.value = true
@@ -26,6 +30,13 @@ async function load() {
   } finally {
     loading.value = false
   }
+  try {
+    const s = await api.getSettings()
+    if (s.practiceCount) {
+      const n = Number(s.practiceCount)
+      if (Number.isFinite(n) && n >= 5 && n <= 50) practiceCount.value = n
+    }
+  } catch {}
 }
 onMounted(load)
 
@@ -48,11 +59,38 @@ async function goPractice(categoryId, name) {
       type: 'special',
       title: `练习（${name}）`,
       categoryIds: [categoryId],
-      count: 20
+      count: practiceCount.value
     })
+    if (r.locked) {
+      toast.error(`有进行中的练习「${r.title}」入口在首页右上角！`)
+      return
+    }
+    if (r.done) {
+      toast.success(r.message)
+      return
+    }
     router.push({ path: '/practice/session', query: { sessionId: r.id } })
   } catch (err) {
     toast.error(err.message || '开始练习失败')
+  }
+}
+
+function askClear(categoryId, name) {
+  clearTarget.value = { categoryId, name }
+}
+
+async function doClear() {
+  if (!clearTarget.value) return
+  clearing.value = true
+  try {
+    await api.clearPracticeProgress(clearTarget.value.categoryId)
+    toast.success(`已清除「${clearTarget.value.name}」的刷题记录`)
+    clearTarget.value = null
+    await load()
+  } catch (err) {
+    toast.error(err.message || '清除记录失败')
+  } finally {
+    clearing.value = false
   }
 }
 
@@ -98,6 +136,7 @@ function visibleChildren(node) {
           <span class="pname" @click="toggleExpand(node.id)">{{ node.name }}</span>
           <span class="pcount">{{ node.done }}/{{ node.total }}</span>
           <button class="btn btn-text pgo" @click="goPractice(node.id, node.name)">去练习 &gt;</button>
+          <button class="btn btn-text pclear" @click="askClear(node.id, node.name)">清除记录</button>
         </div>
         <div class="pprogress">
           <div class="progress">
@@ -117,6 +156,12 @@ function visibleChildren(node) {
                 >
                   去练习 &gt;
                 </button>
+                <button
+                  class="btn btn-text pclear"
+                  @click="askClear(child.virtual ? child.parentId : child.id, child.virtual ? child.parentName : child.name)"
+                >
+                  清除记录
+                </button>
               </div>
               <div class="pprogress">
                 <div class="progress">
@@ -131,6 +176,19 @@ function visibleChildren(node) {
     </div>
 
     <CustomComposeModal v-if="composeOpen" @close="composeOpen = false" @started="onComposeStarted" />
+
+    <Modal v-if="clearTarget" title="清除刷题记录" width="28rem" @close="clearTarget = null">
+      <div class="clear-body">
+        确定要清除「<strong>{{ clearTarget.name }}</strong>」的刷题记录吗？<br />
+        清除后该类目下的题目将重新变为未练习状态，方便二刷三刷。此操作不可撤销。
+      </div>
+      <template #footer>
+        <button class="btn" @click="clearTarget = null">取消</button>
+        <button class="btn btn-danger" :disabled="clearing" @click="doClear">
+          {{ clearing ? '清除中…' : '确认清除' }}
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -202,5 +260,18 @@ function visibleChildren(node) {
   padding: 0.5rem 1.1rem 0.8rem 3.2rem;
   color: var(--text-2);
   font-size: 0.85rem;
+}
+.pclear {
+  font-size: 0.82rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.pclear:hover {
+  color: var(--danger);
+}
+.clear-body {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--text);
 }
 </style>

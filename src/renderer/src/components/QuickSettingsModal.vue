@@ -2,10 +2,7 @@
 import { useSettingsStore, FONT_SIZES } from '../stores/settings'
 import Modal from './Modal.vue'
 
-defineProps({
-  showAbandon: { type: Boolean, default: false }
-})
-const emit = defineEmits(['close', 'abandon'])
+const emit = defineEmits(['close'])
 
 const settings = useSettingsStore()
 </script>
@@ -43,8 +40,6 @@ const settings = useSettingsStore()
           夜间
         </button>
       </div>
-
-      <button v-if="showAbandon" class="qs-abandon" @click="emit('abandon')">放弃本次练习</button>
     </div>
   </Modal>
 </template>
@@ -76,20 +71,5 @@ const settings = useSettingsStore()
   background: var(--primary-weak);
   color: var(--primary);
   font-weight: 600;
-}
-.qs-abandon {
-  width: 100%;
-  border: 1px solid var(--danger);
-  background: transparent;
-  color: var(--danger);
-  border-radius: 8px;
-  padding: 0.5rem 0;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-family: inherit;
-  margin-top: 0.4rem;
-}
-.qs-abandon:hover {
-  background: var(--danger-weak);
 }
 </style>

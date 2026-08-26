@@ -10,10 +10,8 @@ const toast = useToastStore()
 const tree = ref([])
 const expanded = ref(new Set())
 const selected = ref(new Set())
-const count = ref(20)
+const count = ref(10)
 const starting = ref(false)
-
-const COUNT_OPTIONS = [10, 20, 30, 50]
 
 async function load() {
   try {
@@ -22,8 +20,26 @@ async function load() {
   } catch (err) {
     toast.error('加载分类失败：' + (err.message || err))
   }
+  try {
+    const s = await api.getSettings()
+    if (s.practiceCount) {
+      const n = Number(s.practiceCount)
+      if (Number.isFinite(n) && n >= 5 && n <= 50) count.value = n
+    }
+  } catch {}
 }
 onMounted(load)
+
+function saveCount() {
+  let n = Number(count.value)
+  if (!Number.isFinite(n)) n = 10
+  n = Math.min(50, Math.max(5, Math.round(n)))
+  count.value = n
+  api
+    .setSetting('practiceCount', String(n))
+    .then(() => toast.success(`题量已更新为 ${n} 题`))
+    .catch(() => toast.error('保存失败'))
+}
 
 function toggleExpand(id) {
   const s = new Set(expanded.value)
@@ -54,6 +70,14 @@ async function start() {
       categoryIds: [...selected.value],
       count: count.value
     })
+    if (r.locked) {
+      toast.error(`有进行中的练习「${r.title}」入口在首页右上角！`)
+      return
+    }
+    if (r.done) {
+      toast.success(r.message)
+      return
+    }
     emit('started', r.id)
   } catch (err) {
     toast.error(err.message || '组卷失败')
@@ -96,20 +120,14 @@ async function start() {
       </div>
 
       <div class="cc-label">题量</div>
-      <div class="cc-counts">
-        <button
-          v-for="c in COUNT_OPTIONS"
-          :key="c"
-          class="cc-count-btn"
-          :class="{ active: count === c }"
-          @click="count = c"
-        >
-          {{ c }} 题
-        </button>
+      <div class="cc-count-input">
+        <input type="number" min="5" max="50" v-model.number="count" class="cc-input" />
+        <span class="cc-range-hint">5-50 题</span>
+        <button class="btn btn-primary cc-save-btn" @click="saveCount">更新</button>
       </div>
 
       <div class="cc-label">题型</div>
-      <div class="cc-type">单选题（第一版仅支持单选）</div>
+      <div class="cc-type">单选题（单选题型目前够用，其他已在计划中）</div>
     </div>
 
     <template #footer>
@@ -175,25 +193,32 @@ async function start() {
   color: var(--text-2);
   font-size: 0.82rem;
 }
-.cc-counts {
+.cc-count-input {
   display: flex;
+  align-items: center;
   gap: 0.6rem;
 }
-.cc-count-btn {
+.cc-input {
+  width: 5rem;
   border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
   border-radius: 8px;
-  padding: 0.4rem 0.9rem;
-  cursor: pointer;
+  padding: 0.4rem 0.6rem;
   font-size: 0.9rem;
   font-family: inherit;
+  background: var(--card);
+  color: var(--text);
 }
-.cc-count-btn.active {
+.cc-input:focus {
+  outline: none;
   border-color: var(--primary);
-  background: var(--primary-weak);
-  color: var(--primary);
-  font-weight: 600;
+}
+.cc-range-hint {
+  color: var(--text-2);
+  font-size: 0.82rem;
+}
+.cc-save-btn {
+  padding: 0.4rem 1rem;
+  font-size: 0.88rem;
 }
 .cc-type {
   font-size: 0.9rem;

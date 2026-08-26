@@ -502,6 +502,13 @@ function registerPracticeHandlers() {
   ipcMain.handle('practice:start', (e, payload = {}) => {
     const { type = 'special', title = '练习', categoryIds = [], count = 20, wrongCategoryId = null } = payload
     const db = getDb()
+    // 互斥锁：已有进行中的会话时不允许创建新会话
+    const active = db
+      .prepare("SELECT id, title FROM practice_sessions WHERE status = 'in_progress' ORDER BY updated_at DESC LIMIT 1")
+      .get()
+    if (active) {
+      return { locked: true, title: active.title }
+    }
     let ids = []
     if (type === 'wrong_review') {
       const conds = ['wr.removed = 0']
@@ -528,10 +535,25 @@ function registerPracticeHandlers() {
       const all = categoryIds.flatMap((cid) => subtreeIds(cid))
       if (!all.length) throw new Error('未选择分类')
       const ph = all.map(() => '?').join(',')
+      // 优先抽取未练过的题（排除 question_progress 中已有记录的）
       ids = db
-        .prepare(`SELECT id FROM questions WHERE category_id IN (${ph}) ORDER BY RANDOM() LIMIT ?`)
+        .prepare(
+          `SELECT id FROM questions
+           WHERE category_id IN (${ph})
+             AND id NOT IN (SELECT question_id FROM question_progress)
+           ORDER BY RANDOM() LIMIT ?`
+        )
         .all(...all, count)
         .map((r) => r.id)
+      if (!ids.length) {
+        const total = db
+          .prepare(`SELECT COUNT(*) AS c FROM questions WHERE category_id IN (${ph})`)
+          .get(...all).c
+        if (total > 0) {
+          return { done: true, message: '已经练完啦！你可以清除记录再来一遍，或选择其他类目继续前进' }
+        }
+        return { done: true, message: '你搁这练空气呢？' }
+      }
     }
     if (!ids.length) throw new Error('该范围暂无可练习的题目')
     const t = now()
@@ -569,6 +591,11 @@ function registerPracticeHandlers() {
        duration_ms = ?, updated_at = ? WHERE id = ?`
     ).run(JSON.stringify(ans), JSON.stringify(result), correct, Math.max(0, elapsedMs || 0), t, sessionId)
 
+    // 交卷后清理其他遗留的 in_progress 会话，释放互斥锁
+    db.prepare(
+      `UPDATE practice_sessions SET status = 'abandoned', updated_at = ? WHERE status = 'in_progress' AND id != ?`
+    ).run(t, sessionId)
+
     const upsertProgress = db.prepare(
       `INSERT INTO question_progress (question_id, attempt_count, correct_count, last_answer_at)
        VALUES (?, 1, ?, ?)
@@ -594,8 +621,35 @@ function registerPracticeHandlers() {
   })
 
   ipcMain.handle('practice:abandon', (e, sessionId) => {
-    getDb().prepare("UPDATE practice_sessions SET status = 'abandoned', updated_at = ? WHERE id = ?").run(now(), sessionId)
+    const t = now()
+    const db = getDb()
+    db.prepare("UPDATE practice_sessions SET status = 'abandoned', updated_at = ? WHERE id = ?").run(t, sessionId)
+    // 放弃后清理其他遗留的 in_progress 会话，释放互斥锁
+    db.prepare(
+      `UPDATE practice_sessions SET status = 'abandoned', updated_at = ? WHERE status = 'in_progress' AND id != ?`
+    ).run(t, sessionId)
     return { ok: true }
+  })
+
+  // 清除某分类（含子树）下所有题目的刷题记录（question_progress + wrong_records），方便二刷三刷
+  ipcMain.handle('practice:clearProgress', (e, categoryId) => {
+    const cid = Number(categoryId)
+    if (!Number.isFinite(cid)) throw new Error('无效的分类')
+    const db = getDb()
+    const subs = subtreeIds(cid)
+    if (!subs.length) throw new Error('无效的分类')
+    const ph = subs.map(() => '?').join(',')
+    const delProgress = db.prepare(
+      `DELETE FROM question_progress
+       WHERE question_id IN (SELECT id FROM questions WHERE category_id IN (${ph}))`
+    )
+    const delWrong = db.prepare(
+      `DELETE FROM wrong_records
+       WHERE question_id IN (SELECT id FROM questions WHERE category_id IN (${ph}))`
+    )
+    const info = delProgress.run(...subs)
+    delWrong.run(...subs)
+    return { cleared: info.changes }
   })
 }
 
@@ -673,7 +727,9 @@ function registerSettingsHandlers() {
       eraserSize: map.eraserSize || 'normal',
       eraserMode: map.eraserMode || 'pixel',
       // 侧边栏抽屉状态（'1' 收起）
-      sidebarCollapsed: map.sidebarCollapsed || '0'
+      sidebarCollapsed: map.sidebarCollapsed || '0',
+      // 练习题量（5-50，默认 20）
+      practiceCount: map.practiceCount || ''
     }
   })
 

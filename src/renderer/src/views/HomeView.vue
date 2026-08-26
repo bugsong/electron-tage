@@ -47,6 +47,14 @@ function continuePractice() {
 async function reviewWrong() {
   try {
     const r = await api.startPractice({ type: 'wrong_review', title: '错题重练', count: 20 })
+    if (r.locked) {
+      toast.error(`有进行中的练习「${r.title}」未完成，请先完成或放弃`)
+      return
+    }
+    if (r.done) {
+      toast.success(r.message)
+      return
+    }
     router.push({ path: '/practice/session', query: { sessionId: r.id } })
   } catch (err) {
     toast.error(err.message || '暂无错题可练习')
