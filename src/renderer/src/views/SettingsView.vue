@@ -13,7 +13,6 @@ const toast = useToastStore()
 const dbPath = ref('')
 const moving = ref(false)
 // 设备唯一信息（机器码由主进程采集硬件并加密生成；已激活进阶版后不再展示）
-const licensed = ref(false)
 const machineCode = ref('')
 const mcFailed = ref(false)
 const mcLoading = ref(false)
@@ -26,19 +25,13 @@ onMounted(async () => {
   } catch {
     dbPath.value = ''
   }
-  try {
-    const s = await api.getLicenseStatus()
-    licensed.value = !!(s && s.activated)
-  } catch {
-    licensed.value = false
-  }
-  // 加载进阶功能开关状态（授权 + 各子功能开关）
+  // 加载进阶功能开关状态（授权 + 各子功能开关）；授权显隐统一由 store 驱动
   try {
     await advanced.load()
   } catch {
     /* 保持默认 */
   }
-  if (!licensed.value) loadMachineCode()
+  if (!advanced.licensed) loadMachineCode()
 })
 
 async function loadMachineCode() {
@@ -222,9 +215,9 @@ function applyMoveResult(info) {
       <div class="st-desc st-desc-note">更改位置后，已有数据会自动迁移过去；若新位置还没有数据库，则会自动初始化</div>
     </div>
 
-    <div v-if="!licensed" class="card st-card">
+    <div v-if="!advanced.licensed" class="card st-card">
       <div class="st-title">设备唯一信息(已加密)</div>
-      <div class="st-desc">由本机硬件信息在本地加密生成，仅用于软件授权，不会上传；<br/>(进阶版约一杯奶茶价)请复制后发送给开发者生成进阶码</div>
+      <div class="st-desc">若需要进阶版，请复制后发送给开发者生成进阶码</div>
       <div class="st-path">
         <span class="st-path-text">{{ mcFailed ? '获取失败' : machineCode || '获取中…' }}</span>
         <button class="btn" @click="copyMachineCode" :disabled="!machineCode">复制</button>

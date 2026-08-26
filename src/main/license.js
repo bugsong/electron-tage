@@ -13,7 +13,7 @@
 // ============================================================
 const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')
-const { ipcMain } = require('electron')
+const { ipcMain, BrowserWindow } = require('electron')
 const { getDb } = require('./db')
 
 /** 内置 Ed25519 公钥（SPKI PEM），仅用于验签；私钥绝不进入本仓库 */
@@ -200,6 +200,7 @@ async function verifyActivationCode(code) {
     console.error('[license] 授权状态持久化失败:', err)
   }
 
+  broadcastLicenseChange()
   return { ok: true, activatedAt, expiresAt }
 }
 
@@ -211,6 +212,7 @@ async function verifyActivationCode(code) {
 function deactivateLicense() {
   try {
     getDb().prepare("DELETE FROM settings WHERE key = 'license.state'").run()
+    broadcastLicenseChange()
     return { ok: true }
   } catch (err) {
     console.error('[license] 解除授权失败:', err)
@@ -233,6 +235,14 @@ function getLicenseStatus() {
     return { activated: false }
   } catch {
     return { activated: false }
+  }
+}
+
+/** 授权状态变化时向所有窗口广播，驱动渲染进程 store 自动刷新 */
+function broadcastLicenseChange() {
+  const payload = getLicenseStatus()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('license:changed', payload)
   }
 }
 

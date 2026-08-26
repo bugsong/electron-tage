@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 const api = {
+  // 反调试告警：渲染进程检测到调试行为时上报主进程统一处置
+  securityTrigger: () => ipcRenderer.send('anti-debug:trigger'),
+
   // 分类
   categoryTree: () => ipcRenderer.invoke('category:tree'),
 
@@ -63,6 +66,11 @@ const api = {
   verifyActivationCode: (code) => ipcRenderer.invoke('verify-activation-code', code),
   getLicenseStatus: () => ipcRenderer.invoke('license:status'),
   deactivateLicense: () => ipcRenderer.invoke('license:deactivate'),
+  onLicenseChange: (callback) => {
+    const listener = (_e, payload) => callback(payload)
+    ipcRenderer.on('license:changed', listener)
+    return () => ipcRenderer.removeListener('license:changed', listener)
+  },
 
   // 版本更新：检查/下载/安装全部在主进程执行，公开产物仓库零认证
   getUpdaterState: () => ipcRenderer.invoke('updater:getState'),

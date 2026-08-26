@@ -99,6 +99,18 @@ export const useAdvancedStore = defineStore('advanced', {
       }
       this.loaded = true
     },
+    /** 强制重新加载授权状态与各开关（授权变化时调用，不受幂等保护） */
+    async refresh() {
+      this.loaded = false
+      await this.load()
+    },
+    /** 订阅主进程授权变化事件，收到后自动刷新 store；返回取消订阅函数 */
+    subscribe() {
+      if (typeof api.onLicenseChange !== 'function') return () => {}
+      return api.onLicenseChange(() => {
+        this.refresh()
+      })
+    },
     async persist(key) {
       const dbKey = KEY_MAP[key]
       const val = key === 'master' ? this.master : this.features[key]

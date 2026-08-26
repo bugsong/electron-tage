@@ -102,8 +102,7 @@ async function onDeactivateClick() {
         status.value = { activated: false }
         // 同步全局进阶 store：进阶版能力立即回退普通版（设置页进阶区也会隐藏）
         const adv = useAdvancedStore()
-        adv.licensed = false
-        adv.loaded = false
+        await adv.refresh()
         toast.success('已解除进阶授权，回到普通版')
       } else {
         toast.error((r && r.reason) || '解除授权失败')
@@ -119,12 +118,15 @@ async function activate() {
   if (!c || activating.value) return
   activating.value = true
   try {
-    const r = await api.verifyActivationCode(c)
-    if (r && r.ok) {
-      toast.success('激活成功，已开启进阶版')
-      status.value = { activated: true, activatedAt: r.activatedAt, expiresAt: r.expiresAt }
-      code.value = ''
-    } else {
+      const r = await api.verifyActivationCode(c)
+      if (r && r.ok) {
+        toast.success('激活成功，已开启进阶版')
+        status.value = { activated: true, activatedAt: r.activatedAt, expiresAt: r.expiresAt }
+        code.value = ''
+        // 同步全局进阶 store：进阶版能力立即生效（设置页进阶区也会显示）
+        const adv = useAdvancedStore()
+        await adv.refresh()
+      } else {
       toast.error((r && r.reason) || '激活失败')
     }
   } catch (err) {

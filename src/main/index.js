@@ -6,6 +6,10 @@ const { initDb, dbPath } = require('./db')
 const { registerIpc } = require('./ipc')
 const { migrateImages, getImage } = require('./images')
 const { runE2eTest, runUiSmoke } = require('./e2e')
+const { initAntiDebug } = require('./anti-debug')
+
+// 反调试：必须在 app ready 之前完成启动参数扫描（L1 层）
+initAntiDebug()
 
 // 端到端/UI 自检：使用独立临时数据库，避免污染真实数据
 if (process.env.COMATE_TEST === '1' || process.env.COMATE_UI === '1') {
