@@ -12,8 +12,10 @@
 //         json 元数据至少包含 machineCode（本机机器码）、expiresAt（过期时间戳，毫秒）
 // ============================================================
 const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
 const { execFile } = require('node:child_process')
-const { ipcMain, BrowserWindow } = require('electron')
+const { app, ipcMain, BrowserWindow } = require('electron')
 const { getDb } = require('./db')
 
 /** 内置 Ed25519 公钥（SPKI PEM），仅用于验签；私钥绝不进入本仓库 */
@@ -111,14 +113,74 @@ $r | ConvertTo-Json -Compress
 }
 
 let cachedMachineCode = null
+/** 测试钩子：_test.setMachineCode 固定机器码时非 null，getMachineCodeFresh 也用它（生产恒为 null） */
+let mockMachineCode = null
 
-/** 获取本机机器码（hex 字符串）；首次读取后缓存。返回 { ok, code } 或 { ok:false, reason } */
+/** 落盘缓存文件（存放于 userData）：首次采集硬件计算后写入，后续启动直接读取，避免每次都跑 PowerShell */
+const MACHINE_CODE_FILE = 'machine-code.json'
+
+function machineCodeFilePath() {
+  return path.join(app.getPath('userData'), MACHINE_CODE_FILE)
+}
+
+/** 读取落盘的机器码缓存；不存在或格式无效返回 null */
+function loadCachedMachineCode() {
+  try {
+    const o = JSON.parse(fs.readFileSync(machineCodeFilePath(), 'utf8'))
+    if (o && typeof o.code === 'string' && /^[0-9a-f]{64}$/.test(o.code)) return o.code
+  } catch {
+    /* 无文件或损坏：回退到重新采集 */
+  }
+  return null
+}
+
+/** 将机器码写入磁盘缓存（mode 0o600，仅所有者可读写） */
+function saveMachineCode(code) {
+  try {
+    fs.writeFileSync(machineCodeFilePath(), JSON.stringify({ code, savedAt: Date.now() }), { mode: 0o600 })
+  } catch {
+    /* 落盘失败不阻断：下次启动重新采集即可 */
+  }
+}
+
+/**
+ * 获取本机机器码（hex 字符串）：
+ * - 优先用内存缓存
+ * - 其次读落盘缓存（启动加速，避免每次跑 PowerShell 采集硬件）
+ * - 都没有则采集硬件计算并落盘
+ * 返回 { ok, code } 或 { ok:false, reason }
+ */
 async function getMachineCode() {
   if (cachedMachineCode) return { ok: true, code: cachedMachineCode }
+  const cached = loadCachedMachineCode()
+  if (cached) {
+    cachedMachineCode = cached
+    return { ok: true, code: cached }
+  }
   const raw = await readHardware()
   const code = computeMachineCode(raw)
   if (!code) return { ok: false, reason: '无法读取本机硬件信息' }
   cachedMachineCode = code
+  saveMachineCode(code)
+  return { ok: true, code }
+}
+
+/**
+ * 强制重新采集硬件计算机器码，不读内存/落盘缓存。
+ * 用于进阶码验签：落盘缓存可能被篡改（如复制他人的 machine-code.json + 进阶码），
+ * 验签必须用本机真实硬件机器码比对，防止欺骗。
+ * 成功后同步更新内存与落盘缓存为真实值。
+ */
+async function getMachineCodeFresh() {
+  if (mockMachineCode) {
+    cachedMachineCode = mockMachineCode
+    return { ok: true, code: mockMachineCode }
+  }
+  const raw = await readHardware()
+  const code = computeMachineCode(raw)
+  if (!code) return { ok: false, reason: '无法读取本机硬件信息' }
+  cachedMachineCode = code
+  saveMachineCode(code)
   return { ok: true, code }
 }
 
@@ -163,14 +225,14 @@ async function verifyActivationCode(code) {
   // ② 验签（签名覆盖完整 json 原文，任何篡改都会失败）
   if (!verifyEd25519(jsonText, signature)) return fail('签名篡改')
 
-  // ①/③ 解析元数据并比对机器码
+  // ①/③ 解析元数据并比对机器码（强制重新采集硬件，不信任可被篡改的落盘缓存，防欺骗）
   let meta
   try {
     meta = JSON.parse(jsonText)
   } catch {
     return fail('进阶码格式错误')
   }
-  const mc = await getMachineCode()
+  const mc = await getMachineCodeFresh()
   if (!mc.ok) return fail(mc.reason || '无法获取本机机器码')
   if (String(meta.machineCode || '') !== mc.code) return fail('机器不匹配')
 
@@ -270,6 +332,7 @@ const _test = {
   },
   setMachineCode: (code) => {
     cachedMachineCode = code
+    mockMachineCode = code
   },
   computeMachineCode,
   cleanField
