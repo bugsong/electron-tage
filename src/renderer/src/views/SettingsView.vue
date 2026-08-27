@@ -5,6 +5,7 @@ import { useSettingsStore, FONT_SIZES } from '../stores/settings'
 import { useAdvancedStore, FEATURE_GROUPS } from '../stores/advanced'
 import { useToastStore } from '../stores/toast'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import Modal from '../components/Modal.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 
 const settings = useSettingsStore()
@@ -12,12 +13,21 @@ const advanced = useAdvancedStore()
 const toast = useToastStore()
 const dbPath = ref('')
 const moving = ref(false)
-// 设备唯一信息（机器码由主进程采集硬件并加密生成；已激活进阶版后不再展示）
+// 设备唯一信息（机器码由主进程采集硬件并加密生成；同时作为数据库加解密密钥）
 const machineCode = ref('')
 const mcFailed = ref(false)
 const mcLoading = ref(false)
-// 待用户确认的迁移 { dir, message }
-const pendingMove = ref(null)
+// 待用户选择 继承/覆盖 的迁移 { dir, mode, message, sourceExists }
+const pendingChoose = ref(null)
+// 待用户输入解密密钥的迁移 { dir, message }
+const pendingKey = ref(null)
+// pendingKey 弹窗内输入的密钥（独立于"数据库加解密"块的 decryptInput，避免互相污染）
+const pendingKeyInput = ref('')
+// 数据库加解密块：输入的解密密钥
+const decryptInput = ref('')
+const applyingKey = ref(false)
+// 数据库就绪状态 { ready, error }
+const dbStatus = ref({ ready: true, error: null })
 
 onMounted(async () => {
   try {
@@ -31,8 +41,18 @@ onMounted(async () => {
   } catch {
     /* 保持默认 */
   }
-  if (!advanced.licensed) loadMachineCode()
+  // 设备唯一信息码同时用于授权与数据库加解密，始终加载
+  loadMachineCode()
+  refreshDbStatus()
 })
+
+async function refreshDbStatus() {
+  try {
+    dbStatus.value = await api.getDbStatus()
+  } catch {
+    dbStatus.value = { ready: true, error: null }
+  }
+}
 
 async function loadMachineCode() {
   if (mcLoading.value) return
@@ -80,28 +100,98 @@ async function chooseDbDir() {
   if (!dir) return
   try {
     const info = await api.moveDb(dir)
-    if (info.status === 'need_confirm') {
-      pendingMove.value = { dir, message: info.message }
-      return
-    }
-    applyMoveResult(info)
+    handleMoveInfo(dir, info)
   } catch (err) {
     toast.error(err.message || '迁移数据库失败')
   }
 }
 
-async function confirmMove() {
-  const pending = pendingMove.value
-  pendingMove.value = null
+function handleMoveInfo(dir, info) {
+  if (!info) return
+  if (info.status === 'ok') {
+    applyMoveResult(info)
+    return
+  }
+  if (info.status === 'need_choose') {
+    pendingChoose.value = {
+      dir,
+      mode: info.mode,
+      message: info.message,
+      sourceExists: info.sourceExists
+    }
+    return
+  }
+  if (info.status === 'need_key') {
+    pendingKey.value = { dir, message: info.message }
+    return
+  }
+}
+
+async function chooseInherit() {
+  const pending = pendingChoose.value
+  pendingChoose.value = null
   if (!pending) return
   moving.value = true
   try {
-    const info = await api.moveDb(pending.dir, { force: true })
+    const info = await api.moveDb(pending.dir, { action: 'inherit' })
     applyMoveResult(info)
   } catch (err) {
-    toast.error(err.message || '迁移数据库失败')
+    toast.error(err.message || '继承失败')
   } finally {
     moving.value = false
+  }
+}
+
+async function chooseOverwrite() {
+  const pending = pendingChoose.value
+  pendingChoose.value = null
+  if (!pending) return
+  moving.value = true
+  try {
+    const info = await api.moveDb(pending.dir, { action: 'overwrite' })
+    applyMoveResult(info)
+  } catch (err) {
+    toast.error(err.message || '覆盖失败')
+  } finally {
+    moving.value = false
+  }
+}
+
+async function confirmKey() {
+  const pending = pendingKey.value
+  const key = pendingKeyInput.value.trim()
+  if (!pending) return
+  if (!key) {
+    toast.error('请输入设备唯一信息码')
+    return
+  }
+  pendingKey.value = null
+  pendingKeyInput.value = ''
+  moving.value = true
+  try {
+    const info = await api.moveDb(pending.dir, { action: 'inherit_with_key', key })
+    applyMoveResult(info)
+  } catch (err) {
+    toast.error(err.message || '解密失败')
+  } finally {
+    moving.value = false
+  }
+}
+
+async function applyDecryptKeyToCurrent() {
+  const key = decryptInput.value.trim()
+  if (!key) return
+  applyingKey.value = true
+  try {
+    await api.applyDecryptKey(key)
+    decryptInput.value = ''
+    toast.success('解密成功，已用本机设备唯一信息码重新加密')
+    await refreshDbStatus()
+    try { dbPath.value = await api.getDbPath() } catch {}
+  } catch (err) {
+    toast.error(err.message || '解密失败')
+  } finally {
+    applyingKey.value = false
   }
 }
 
@@ -111,10 +201,13 @@ function applyMoveResult(info) {
     const msg =
       info.action === 'migrate'
         ? '已迁移数据库到新位置'
-        : info.action === 'use'
-          ? '已打开该位置的数据库'
-          : '已在新位置初始化数据库'
+        : info.action === 'inherit'
+          ? '已继承该位置的数据库'
+          : info.action === 'use'
+            ? '已打开该位置的数据库'
+            : '已在新位置初始化数据库'
     toast.success(msg)
+    refreshDbStatus()
   }
 }
 </script>
@@ -209,29 +302,89 @@ function applyMoveResult(info) {
         <span class="st-path-text">{{ dbPath }}</span>
         <button class="btn" @click="copyPath">复制路径</button>
         <button class="btn" @click="chooseDbDir" :disabled="moving">
-          {{ moving ? '迁移中…' : '更改路径' }}
+          {{ moving ? '处理中…' : '更改路径' }}
         </button>
       </div>
-      <div class="st-desc st-desc-note">更改位置后，已有数据会自动迁移过去；若新位置还没有数据库，则会自动初始化</div>
+      <div class="st-desc st-desc-note">若新位置已有本软件数据库，将优先继承使用（保留其数据）；若没有则自动迁移或初始化</div>
     </div>
 
-    <div v-if="!advanced.licensed" class="card st-card">
-      <div class="st-title">设备唯一信息(已加密)</div>
-      <div class="st-desc">若需要进阶版，请复制后发送给开发者生成进阶码</div>
+    <!-- 数据库加解密：本机密钥展示 + 他人库解密接管 -->
+    <div class="card st-card">
+      <div class="st-title">数据库加解密</div>
+      <div class="st-desc">本机数据库使用「设备唯一信息码」作为加解密密钥。分享数据库时，对方需输入你的设备唯一信息码解密，解密后会自动用对方本机码重新加密，无需额外保存他人密钥。</div>
+
+      <div class="st-sub-title">本机设备唯一信息码</div>
+      <div class="st-desc">即本机数据库的加密密钥，分享数据库时提供给对方</div>
       <div class="st-path">
         <span class="st-path-text">{{ mcFailed ? '获取失败' : machineCode || '获取中…' }}</span>
         <button class="btn" @click="copyMachineCode" :disabled="!machineCode">复制</button>
       </div>
+
+      <div class="st-sub-title">输入解密密钥</div>
+      <div class="st-desc">若当前数据位置的数据库由他人分享（用其设备唯一信息码加密），在此输入其设备唯一信息码以解密并用本机码重新加密</div>
+      <div class="st-path">
+        <input
+          class="st-key-input"
+          v-model.trim="decryptInput"
+          placeholder="粘贴 64 位设备唯一信息码"
+          :disabled="applyingKey"
+        />
+        <button
+          class="btn"
+          @click="applyDecryptKeyToCurrent"
+          :disabled="applyingKey || !decryptInput"
+        >
+          {{ applyingKey ? '处理中…' : '应用解密密钥' }}
+        </button>
+      </div>
+
+      <div v-if="dbStatus && !dbStatus.ready" class="st-warn">
+        当前数据库无法打开：{{ dbStatus.error || '解密密钥不匹配' }}。请输入正确的设备唯一信息码以恢复访问。
+      </div>
     </div>
 
-    <ConfirmDialog
-      v-if="pendingMove"
+
+    <!-- 选择 继承 / 覆盖 弹窗 -->
+    <Modal
+      v-if="pendingChoose"
       title="更改数据位置"
-      :message="pendingMove.message"
-      ok-text="确认"
-      @confirm="confirmMove"
-      @close="pendingMove = null"
-    />
+      width="26rem"
+      @close="pendingChoose = null"
+    >
+      <div class="confirm-text">{{ pendingChoose.message }}</div>
+      <template #footer>
+        <button class="btn" @click="pendingChoose = null">取消</button>
+        <button
+          v-if="pendingChoose.mode === 'inherit_or_overwrite'"
+          class="btn btn-primary"
+          @click="chooseInherit"
+        >
+          继承
+        </button>
+        <button class="btn btn-danger" @click="chooseOverwrite">覆盖</button>
+      </template>
+    </Modal>
+
+    <!-- 输入解密密钥弹窗 -->
+    <Modal
+      v-if="pendingKey"
+      title="输入解密密钥"
+      width="26rem"
+      @close="pendingKey = null"
+    >
+      <div class="confirm-text">{{ pendingKey.message }}</div>
+      <div class="st-path" style="margin-top: 0.8rem">
+        <input
+          class="st-key-input"
+          v-model.trim="pendingKeyInput"
+          placeholder="粘贴 64 位设备唯一信息码"
+        />
+      </div>
+      <template #footer>
+        <button class="btn" @click="pendingKey = null">取消</button>
+        <button class="btn btn-primary" @click="confirmKey">解密并继承</button>
+      </template>
+    </Modal>
 
     <!-- <div class="st-about">题迹 · 仅本地使用 · 数据不出本机</div> -->
   </div>
@@ -249,6 +402,11 @@ function applyMoveResult(info) {
 .st-title {
   font-weight: 700;
   font-size: 1rem;
+}
+.st-sub-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin: 0.9rem 0 0.1rem;
 }
 .st-desc {
   color: var(--text-2);
@@ -316,6 +474,37 @@ function applyMoveResult(info) {
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: text;
+}
+.st-key-input {
+  flex: 1;
+  background: var(--card-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  font-family: Consolas, 'Courier New', monospace;
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+}
+.st-key-input:focus {
+  border-color: var(--primary);
+}
+.st-warn {
+  margin: 0.8rem 0 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  background: #fff4e5;
+  border: 1px solid #ffb84d;
+  color: #b35900;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.confirm-text {
+  white-space: pre-line;
+  line-height: 1.6;
+  font-size: 0.88rem;
+  color: var(--text);
 }
 /* ---- 进阶功能控制 ---- */
 .adv-card {

@@ -50,4 +50,10 @@ function setPackaged(v) {
   packaged = Boolean(v)
 }
 
-module.exports = { userData: () => userData, freshUserData, tmpRoot, setPackaged }
+/** 注入测试用固定设备唯一信息码作为数据库加密密钥（64 个 a，合法 hex） */
+function useMachineKey() {
+  const { setMachineKey } = require('../src/main/keyring')
+  setMachineKey('a'.repeat(64))
+}
+
+module.exports = { userData: () => userData, freshUserData, tmpRoot, setPackaged, useMachineKey }

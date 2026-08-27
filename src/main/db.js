@@ -5,13 +5,26 @@ const { app } = require('electron')
 // 同步 API、原生支持 BLOB（Buffer）绑定，v13 起为 N-API 实现，node 与 Electron ABI 通用，
 // 额外支持 SQLCipher 的 PRAGMA key / rekey，用于数据库整体加密。
 const Database = require('better-sqlite3-multiple-ciphers')
-const { loadKey, wipeKey } = require('./keyring')
+const {
+  loadKey,
+  wipeKey,
+  hasKeyFile,
+  keyFilePath,
+  hasMachineKey,
+  getMachineKeyHex,
+  loadLegacyKey
+} = require('./keyring')
 
 /** 数据库文件名（曾用名 comate.db，已改名 tage.db） */
 const DB_FILE = 'tage.db'
 const LEGACY_DB_FILE = 'comate.db'
 
+/** 本软件数据库的标识表：探测目标库是否为本软件库时使用 */
+const OUR_TABLES = ['categories', 'questions', 'practice_sessions', 'settings']
+
 let db = null
+/** 最近一次 initDb 失败的原因（供前端"数据库加解密"恢复入口使用） */
+let lastInitError = null
 
 function getDb() {
   if (!db) throw new Error('数据库尚未初始化')
@@ -56,23 +69,186 @@ function migrateLegacyDbFile(dir) {
   }
 }
 
+/** 判断一个已打开的数据库连接是否为本软件库（具备核心表） */
+function hasOurSchema(d) {
+  try {
+    const names = d.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name)
+    return OUR_TABLES.every((t) => names.includes(t))
+  } catch {
+    return false
+  }
+}
+
 /**
- * 把数据库迁移到新目录（或在新目录初始化）：
- * - 原位置已有数据库 → 关闭连接合并 WAL 后整文件复制到新位置（加密属性随文件保留）
- * - 原位置没有数据库 → 直接在新位置初始化
- * - 目标已存在数据库文件且未强制 → 返回 need_confirm，由前端确认后带 force 重试
- * 成功后持久化配置并重新打开新库；失败则回滚配置、恢复原库。
- * @param {string} newDir 目标文件夹（不存在会自动创建）
- * @param {{force?: boolean}} opts force=true 时允许覆盖目标已有数据库
+ * 探测目标数据库文件：是否加密、本机密钥能否打开、是否本软件库。
+ * 不修改文件、不修改模块级 db。返回 { encrypted, openable, isOurs }。
+ * @param {string} file 目标 tage.db 路径
+ * @param {string} keyHex 本机设备唯一信息码 hex
+ */
+function probeTargetDb(file, keyHex) {
+  let encrypted = true
+  let probe = null
+  try {
+    probe = new Database(file)
+    probe.prepare('SELECT count(*) FROM sqlite_master').get()
+    encrypted = false
+  } catch {
+    encrypted = true
+  } finally {
+    if (probe) { try { probe.close() } catch {} }
+  }
+
+  if (!encrypted) {
+    let d = null
+    try {
+      d = new Database(file)
+      return { encrypted: false, openable: true, isOurs: hasOurSchema(d) }
+    } finally {
+      if (d) { try { d.close() } catch {} }
+    }
+  }
+
+  let d = null
+  try {
+    d = new Database(file)
+    d.pragma(`key = "x'${keyHex}'"`)
+    d.prepare('SELECT count(*) FROM sqlite_master').get()
+    return { encrypted: true, openable: true, isOurs: hasOurSchema(d) }
+  } catch {
+    return { encrypted: true, openable: false, isOurs: false }
+  } finally {
+    if (d) { try { d.close() } catch {} }
+  }
+}
+
+/** 校验 64 位十六进制密钥格式 */
+function isValidKeyHex(hex) {
+  return typeof hex === 'string' && /^[0-9a-f]{64}$/i.test(hex)
+}
+
+/** 目标无 tage.db：原位置有库则整文件复制迁移，无库则在新位置初始化 */
+function doMigrateOrInit(targetDir, current, target, sourceExists) {
+  const oldDir = configuredDataDir()
+  fs.mkdirSync(targetDir, { recursive: true })
+  if (sourceExists) {
+    try {
+      if (db) { db.close(); db = null }
+      fs.copyFileSync(current, target)
+    } catch (err) {
+      try { db = null; initDb() } catch {}
+      throw new Error('迁移失败，未能复制数据库：' + ((err && err.message) || err))
+    }
+  }
+  fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: targetDir }))
+  try {
+    if (db) { db.close(); db = null }
+    initDb()
+  } catch (err) {
+    try { fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: oldDir })) } catch {}
+    try { if (db) db.close() } catch {}
+    db = null
+    initDb()
+    throw new Error('迁移失败，已恢复原数据库：' + ((err && err.message) || err))
+  }
+  if (sourceExists) {
+    for (const f of [DB_FILE, DB_FILE + '-wal', DB_FILE + '-shm']) {
+      try { fs.unlinkSync(path.join(oldDir, f)) } catch {}
+    }
+  }
+  return {
+    status: 'ok',
+    action: sourceExists ? 'migrate' : 'init',
+    currentPath: current,
+    newPath: target
+  }
+}
+
+/** 继承目标库：仅切换配置指向目标并重新打开，不复制、不删除原位置库（保留可切回） */
+function doInherit(targetDir, current, target) {
+  const oldDir = configuredDataDir()
+  fs.mkdirSync(targetDir, { recursive: true })
+  fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: targetDir }))
+  try {
+    if (db) { db.close(); db = null }
+    initDb()
+  } catch (err) {
+    try { fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: oldDir })) } catch {}
+    try { if (db) db.close() } catch {}
+    db = null
+    initDb()
+    throw new Error('继承失败，已恢复原数据库：' + ((err && err.message) || err))
+  }
+  return { status: 'ok', action: 'inherit', currentPath: current, newPath: target }
+}
+
+/** 覆盖目标：用当前库整文件复制替换目标，迁移成功后清理原位置 */
+function doOverwrite(targetDir, current, target, sourceExists) {
+  if (!sourceExists) throw new Error('当前位置无数据库，无法覆盖目标')
+  const oldDir = configuredDataDir()
+  fs.mkdirSync(targetDir, { recursive: true })
+  try { fs.unlinkSync(target) } catch {}
+  try {
+    if (db) { db.close(); db = null }
+    fs.copyFileSync(current, target)
+  } catch (err) {
+    try { db = null; initDb() } catch {}
+    throw new Error('覆盖失败，未能复制数据库：' + ((err && err.message) || err))
+  }
+  fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: targetDir }))
+  try {
+    if (db) { db.close(); db = null }
+    initDb()
+  } catch (err) {
+    try { fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: oldDir })) } catch {}
+    try { if (db) db.close() } catch {}
+    db = null
+    initDb()
+    throw new Error('覆盖失败，已恢复原数据库：' + ((err && err.message) || err))
+  }
+  for (const f of [DB_FILE, DB_FILE + '-wal', DB_FILE + '-shm']) {
+    try { fs.unlinkSync(path.join(oldDir, f)) } catch {}
+  }
+  return { status: 'ok', action: 'migrate', currentPath: current, newPath: target }
+}
+
+/** 用指定密钥解密目标库并 rekey 成本机密钥后继承 */
+function doInheritWithKey(targetDir, current, target, keyHex) {
+  if (!isValidKeyHex(keyHex)) throw new Error('设备唯一信息码格式无效')
+  const machineHex = getMachineKeyHex()
+  if (!machineHex) throw new Error('本机设备唯一信息码未就绪，无法重新加密')
+
+  let d = null
+  try {
+    d = new Database(target)
+    d.pragma(`key = "x'${keyHex}'"`)
+    d.prepare('SELECT count(*) FROM sqlite_master').get()
+    if (!hasOurSchema(d)) throw new Error('解密成功，但该数据库不是本软件数据库')
+    if (keyHex.toLowerCase() !== machineHex.toLowerCase()) {
+      d.pragma(`rekey = "x'${machineHex}'"`)
+    }
+  } catch (err) {
+    throw new Error('解密失败，设备唯一信息码不匹配：' + ((err && err.message) || err))
+  } finally {
+    if (d) { try { d.close() } catch {} }
+  }
+  return doInherit(targetDir, current, target)
+}
+
+/**
+ * 更改数据位置：
+ * - 目标无 tage.db → 迁移（原位置有库）或初始化（原位置无库）
+ * - 目标有 tage.db → 优先继承（使用目标库），保留覆盖为次选；
+ *   若本机密钥无法解密目标 → 返回 need_key 让用户输入加密密钥（设备唯一信息码）；
+ *   若目标非本软件库 → 仅允许覆盖或取消。
+ * @param {string} newDir 目标文件夹
+ * @param {{action?: 'inherit'|'overwrite'|'inherit_with_key', key?: string}} opts
  */
 async function moveDb(newDir, opts = {}) {
-  if (!db) throw new Error('数据库尚未初始化')
   if (!newDir || typeof newDir !== 'string' || !newDir.trim()) throw new Error('请选择有效的文件夹')
 
   const targetDir = path.resolve(newDir.trim())
   const current = path.resolve(dbPath())
   const target = path.join(targetDir, DB_FILE)
-  // Windows 路径不区分大小写，统一小写比较
   const samePath =
     process.platform === 'win32'
       ? current.toLowerCase() === target.toLowerCase()
@@ -82,13 +258,22 @@ async function moveDb(newDir, opts = {}) {
   const sourceExists = fs.existsSync(current)
   const targetExists = fs.existsSync(target)
 
-  // 目标已存在数据库文件：非强制时先让用户确认，避免误覆盖
-  if (targetExists && !opts.force) {
+  // 目标无 tage.db：走迁移/初始化
+  if (!targetExists) {
+    return doMigrateOrInit(targetDir, current, target, sourceExists)
+  }
+
+  // 目标有 tage.db：按 action 执行
+  if (opts.action === 'inherit') return doInherit(targetDir, current, target)
+  if (opts.action === 'overwrite') return doOverwrite(targetDir, current, target, sourceExists)
+  if (opts.action === 'inherit_with_key' && opts.key) return doInheritWithKey(targetDir, current, target, opts.key)
+
+  // 无 action：探测目标库，决定下一步交互
+  const machineHex = getMachineKeyHex()
+  if (!machineHex) {
     return {
-      status: 'need_confirm',
-      message: sourceExists
-        ? `目标文件夹已存在 ${DB_FILE} 数据库文件，迁移将覆盖该文件。\n建议选择空文件夹，确认后将继续。`
-        : `目标文件夹已存在 ${DB_FILE} 数据库文件，确认后将打开并使用该数据库。`,
+      status: 'need_key',
+      message: '目标位置已存在数据库，但本机设备唯一信息码未就绪。请输入该数据库的加密密钥（设备唯一信息码）以继承，或取消。',
       currentPath: current,
       newPath: target,
       sourceExists,
@@ -96,59 +281,76 @@ async function moveDb(newDir, opts = {}) {
     }
   }
 
-  const oldDir = configuredDataDir()
-  fs.mkdirSync(targetDir, { recursive: true })
-
-  // 原位置有数据库：关闭连接（close 自动 checkpoint，把 WAL 合并进主文件）后整文件复制到新位置。
-  // SQLCipher 加密库无法在线 backup 到未加密目标（incompatible source and target），
-  // 文件级复制保证迁移产物仍是同密钥加密的完整数据库。
-  if (sourceExists) {
-    // force 覆盖时先移除旧目标，避免复制到非 SQLite 文件（或旧库）上
-    if (targetExists) {
-      try { fs.unlinkSync(target) } catch {}
-    }
-    try {
-      db.close()
-      db = null
-      fs.copyFileSync(current, target)
-    } catch (err) {
-      try { db = null; initDb() } catch {}
-      throw new Error('迁移失败，未能复制数据库：' + ((err && err.message) || err))
+  const probe = probeTargetDb(target, machineHex)
+  if (probe.openable && probe.isOurs) {
+    return {
+      status: 'need_choose',
+      mode: 'inherit_or_overwrite',
+      message: sourceExists
+        ? '目标位置已存在本软件数据库。\n• 继承：直接使用该数据库（保留其数据，不迁移当前数据）\n• 覆盖：用当前数据库替换目标（目标数据将丢失）'
+        : '目标位置已存在本软件数据库。\n• 继承：直接使用该数据库\n• 覆盖：用当前数据库替换目标',
+      currentPath: current,
+      newPath: target,
+      sourceExists,
+      targetExists
     }
   }
-
-  // 持久化新位置
-  fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: targetDir }))
-
-  // 关闭旧连接，在新位置重新打开
-  try {
-    if (db) {
-      db.close()
-      db = null
-    }
-    initDb()
-  } catch (err) {
-    // 失败回滚：恢复原配置并重新打开原库，保证数据可用
-    try { fs.writeFileSync(dataDirConfigFile(), JSON.stringify({ dir: oldDir })) } catch {}
-    try { if (db) db.close() } catch {}
-    db = null
-    initDb()
-    throw new Error('迁移失败，已恢复原数据库：' + ((err && err.message) || err))
-  }
-
-  // 迁移成功后清理原位置文件（含 WAL/SHM 残留）
-  if (sourceExists) {
-    for (const f of [DB_FILE, DB_FILE + '-wal', DB_FILE + '-shm']) {
-      try { fs.unlinkSync(path.join(oldDir, f)) } catch {}
+  if (probe.encrypted && !probe.openable) {
+    return {
+      status: 'need_key',
+      message: '目标位置已存在加密数据库，但本机设备唯一信息码无法解密。请输入该数据库的加密密钥（设备唯一信息码）以继承。',
+      currentPath: current,
+      newPath: target,
+      sourceExists,
+      targetExists
     }
   }
-
+  // 能打开但非本软件库，或未加密非本软件库
   return {
-    status: 'ok',
-    action: sourceExists ? 'migrate' : targetExists ? 'use' : 'init',
+    status: 'need_choose',
+    mode: 'overwrite_only',
+    message: '目标位置已存在数据库文件，但不是本软件数据库。只能选择覆盖（用当前数据库替换）或取消。',
     currentPath: current,
-    newPath: target
+    newPath: target,
+    sourceExists,
+    targetExists
   }
+}
+
+/**
+ * 对当前数据位置的数据库应用解密密钥（设备唯一信息码）：
+ * 用输入密钥解密当前 tage.db → 校验本软件库 → rekey 成本机设备唯一信息码 → 重新打开。
+ * 用于"数据库加解密"块：拿到他人加密的库后输入其设备唯一信息码解密并接管。
+ */
+function applyDecryptKey(keyHex) {
+  if (!isValidKeyHex(keyHex)) throw new Error('设备唯一信息码格式无效（应为 64 位十六进制）')
+  const file = dbPath()
+  if (!fs.existsSync(file)) throw new Error('当前数据位置不存在数据库文件')
+  const machineHex = getMachineKeyHex()
+  if (!machineHex) throw new Error('本机设备唯一信息码未就绪，无法重新加密')
+
+  let d = null
+  try {
+    d = new Database(file)
+    d.pragma(`key = "x'${keyHex}'"`)
+    d.prepare('SELECT count(*) FROM sqlite_master').get()
+    if (!hasOurSchema(d)) throw new Error('解密成功，但该数据库不是本软件数据库（缺少必要的数据表）')
+    if (keyHex.toLowerCase() !== machineHex.toLowerCase()) {
+      d.pragma(`rekey = "x'${machineHex}'"`)
+    }
+  } catch (err) {
+    throw new Error('解密失败，设备唯一信息码不匹配：' + ((err && err.message) || err))
+  } finally {
+    if (d) { try { d.close() } catch {} }
+  }
+  if (db) { try { db.close() } catch {} ; db = null }
+  initDb()
+  return { ok: true }
+}
+
+/** 返回数据库就绪状态，供前端决定是否展示"数据库加解密"恢复入口 */
+function getDbStatus() {
+  return { ready: !!db, error: lastInitError }
 }
 
 /**
@@ -187,28 +389,54 @@ function openEncryptedDb(file, key) {
   db.pragma('foreign_keys = ON')
 }
 
+/** 打开数据库并建/迁 schema（initDb 与迁移流程共享） */
+function openAndSchema(file, key) {
+  openEncryptedDb(file, key)
+  createSchema()
+  seedIfEmpty()
+  migrateCategorySchema()
+  // 图片 BLOB 表（历史 base64/file 引用的迁移在应用启动后异步执行）
+  const { createImagesSchema } = require('./images')
+  createImagesSchema(db)
+}
+
 function initDb() {
   const dir = configuredDataDir()
   fs.mkdirSync(dir, { recursive: true })
   migrateLegacyDbFile(dir)
 
+  const file = dbPath()
   const key = loadKey()
   try {
-    openEncryptedDb(dbPath(), key)
-    createSchema()
-    seedIfEmpty()
-    migrateCategorySchema()
-    // 图片 BLOB 表（历史 base64/file 引用的迁移在应用启动后异步执行）
-    const { createImagesSchema } = require('./images')
-    createImagesSchema(db)
+    try {
+      openAndSchema(file, key)
+    } catch (err) {
+      // 机器码打开失败 + 存在旧 key.enc → 用旧 safeStorage 密钥打开后 rekey 成机器码（一次性迁移）
+      if (hasMachineKey() && hasKeyFile()) {
+        try { if (db) db.close() } catch {}
+        db = null
+        const legacyKey = loadLegacyKey()
+        try {
+          openAndSchema(file, legacyKey)
+          getDb().pragma(`rekey = "x'${getMachineKeyHex()}'"`)
+          try { fs.unlinkSync(keyFilePath()) } catch {}
+        } finally {
+          wipeKey(legacyKey)
+        }
+      } else {
+        throw err
+      }
+    }
+    lastInitError = null
+    return db
   } catch (err) {
     try { if (db) db.close() } catch {}
     db = null
+    lastInitError = String((err && err.message) || err)
     throw err
   } finally {
     wipeKey(key)
   }
-  return db
 }
 
 function createSchema() {
@@ -541,4 +769,4 @@ function seedDemoQuestions() {
     '1000 × (1+8%) = 1080 亿元。')
 }
 
-module.exports = { initDb, getDb, dbPath, configuredDataDir, moveDb }
+module.exports = { initDb, getDb, dbPath, configuredDataDir, moveDb, applyDecryptKey, getDbStatus }

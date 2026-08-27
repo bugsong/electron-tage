@@ -196,14 +196,7 @@ onBeforeUnmount(() => {
       <div class="updater-title">版本更新</div>
       <div class="updater-head-right">
         <span class="updater-version" data-test="current-version">{{ versionText }}</span>
-        <button
-          class="btn btn-text updater-recheck"
-          data-test="recheck-btn"
-          :disabled="checking || downloading || installNotice || retryCooldown > 0"
-          @click="check"
-        >
-          {{ checking ? '检查中…' : retryCooldown > 0 ? `检查更新 (${retryCooldown}s)` : '检查更新' }}
-        </button>
+
       </div>
     </div>
 
@@ -325,10 +318,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.6rem;
 }
-.updater-recheck {
-  font-size: 0.8rem;
-  padding: 0.2rem 0.55rem;
-}
+
 .updater-body {
   margin-top: 0.7rem;
   display: flex;

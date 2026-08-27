@@ -207,7 +207,7 @@ test('开发模式保护：未打包时 check/download 返回 not-supported', as
   assert.equal(r2.reason, 'not-supported')
 })
 
-test('安装失败标记：写入后原版本启动提示 install-failed，升级后清除', async () => {
+test('安装失败标记：写入与版本判定清除逻辑（getState 不自动展示，仅手动检测）', async () => {
   freshUserData()
   const { initDb, getDb } = require('../src/main/db')
   initDb()
@@ -219,20 +219,13 @@ test('安装失败标记：写入后原版本启动提示 install-failed，升�
     .prepare("UPDATE settings SET value = ? WHERE key = 'updater.installFail'")
     .run(JSON.stringify({ version: '0.2.0', at: Date.now() }))
 
-  // 应用仍为 0.1.0（未升级）→ getState 提示安装失败
+  // getState 不再自动展示安装失败：初始恒为 idle，需用户手动检查
   _test.reset()
   const s1 = _test.getState()
-  assert.equal(s1.status, 'error')
-  assert.equal(s1.errorReason, 'install-failed')
+  assert.equal(s1.status, 'idle')
 
-  // 模拟升级到 0.2.0：读取标记应判定安装成功并清除
-  const { getDb: g } = require('../src/main/db')
+  // 模拟升级到目标版本：readInstallFailMarker 判定安装成功并清除
   getDb()
-    .prepare("UPDATE settings SET value = ? WHERE key = 'updater.installFail'")
-    .run(JSON.stringify({ version: '0.2.0', at: Date.now() }))
-  // 手动将当前版本视为已升级：直接验证 readInstallFailMarker 的版本判定逻辑
-  // 通过写入更高版本号模拟"已升级到目标版本之后"
-  g()
     .prepare("UPDATE settings SET value = ? WHERE key = 'updater.installFail'")
     .run(JSON.stringify({ version: '0.0.5', at: Date.now() }))
   assert.equal(_test.readInstallFailMarker(), null)
@@ -240,7 +233,7 @@ test('安装失败标记：写入后原版本启动提示 install-failed，升�
   assert.equal(row, undefined, '升级后失败标记应被清除')
 })
 
-test('getState 合并持久化记录：按实际版本比较判定，避免已升级版本被误判为新版本', () => {
+test('getState 不自动恢复持久化记录：初始恒为 idle，仅手动检查才检测', () => {
   freshUserData()
   const { initDb, getDb } = require('../src/main/db')
   initDb()
@@ -254,49 +247,27 @@ test('getState 合并持久化记录：按实际版本比较判定，避免已�
       )
       .run('updater.lastCheck', JSON.stringify(o))
 
-  // 场景一：持久化记录的版本等于当前版本（已升级到该版本）→ 不应误判为新版本
-  writeSaved({ status: 'update-available', latestVersion: '0.1.0', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
-  _test.reset()
-  let s = _test.getState()
-  assert.equal(s.status, 'no-update', '持久化版本等于当前版本时应判为已是最新')
-  assert.equal(s.latestVersion, null)
-
-  // 场景二：持久化记录的版本低于当前版本（升级越过该版本）→ 同样不误判
-  writeSaved({ status: 'update-available', latestVersion: '0.0.5', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
-  _test.reset()
-  s = _test.getState()
-  assert.equal(s.status, 'no-update', '持久化版本低于当前版本时应判为已是最新')
-
-  // 场景三：持久化记录的版本高于当前版本 → 仍应判为有新版本（不破坏原有能力）
+  // 即使持久化记录版本高于当前，getState 也不自动恢复更新状态
   writeSaved({ status: 'update-available', latestVersion: '0.2.0', releaseNotes: 'y', manualDownloadUrl: 'u', checkedAt: Date.now() })
   _test.reset()
-  s = _test.getState()
-  assert.equal(s.status, 'update-available', '持久化版本高于当前版本时应判为有新版本')
-  assert.equal(s.latestVersion, '0.2.0')
+  const s = _test.getState()
+  assert.equal(s.status, 'idle', '不再自动恢复更新状态，初始为 idle')
+  assert.equal(s.latestVersion, null)
 })
 
-test('getState 合并出新版本后状态机同步，download 不再返回 not-available', async () => {
+test('手动检查发现新版本后状态机同步，download 不再返回 not-available', async () => {
   freshUserData()
-  const { initDb, getDb } = require('../src/main/db')
+  const { initDb } = require('../src/main/db')
   initDb()
-  useMockUpdater()
+  const mock = useMockUpdater()
+  const { check, download } = require('../src/main/updater')
 
-  // 持久化一条高于当前版本的检查记录，模拟启动后从持久化恢复"有新版本"
-  getDb()
-    .prepare(
-      `INSERT INTO settings (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    )
-    .run(
-      'updater.lastCheck',
-      JSON.stringify({ status: 'update-available', latestVersion: '0.2.0', releaseNotes: 'x', manualDownloadUrl: 'u', checkedAt: Date.now() })
-    )
-  _test.reset()
-  const s = _test.getState()
-  assert.equal(s.status, 'update-available')
+  // 手动检查 → mock 触发 update-available（版本高于当前 0.1.0）
+  await check()
+  mock.emit('update-available', { version: '0.2.0', releaseNotes: 'x' })
+  assert.equal(_test.state.status, 'update-available')
 
-  // 状态机应已同步到 update-available，download 直接进入下载而非 not-available
-  const { download } = require('../src/main/updater')
+  // 状态机已同步到 update-available，download 直接进入下载而非 not-available
   const r = await download()
   assert.equal(r.ok, true)
   assert.equal(_test.state.status, 'downloading')

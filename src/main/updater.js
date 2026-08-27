@@ -449,31 +449,9 @@ async function openManualDownload() {
   }
 }
 
-/** 查询更新状态（spec 5.2.1-4）：idle 时合并留存的最近一次检查结果 */
+/** 查询更新状态：不自动恢复上次的检查结果或安装失败标记，初始恒为 idle，
+ *  仅返回当前内存状态与版本号；更新检测只由用户手动点「检查更新」触发。 */
 function getState() {
-  if (state.status === STATUS.IDLE) {
-    const saved = loadCheckResult()
-    if (saved) {
-      const savedIsNewer = !!saved.latestVersion && compareVersions(saved.latestVersion, currentVersion()) > 0
-      if (savedIsNewer) {
-        // 同步到内存状态机：后续 download() 依赖 state.status 判定可下载（spec 5.2.1-4）
-        state.status = STATUS.UPDATE_AVAILABLE
-        state.latestVersion = saved.latestVersion
-        state.releaseNotes = saved.releaseNotes || ''
-        state.manualDownloadUrl = saved.manualDownloadUrl || MANUAL_DOWNLOAD_URL
-        state.lastCheckedAt = saved.checkedAt || null
-      } else if (saved.status === STATUS.NO_UPDATE || saved.status === STATUS.UPDATE_AVAILABLE) {
-        // 持久化版本不高于当前（含已升级到该版本）：视为已是最新（spec 5.2.1）
-        state.status = STATUS.NO_UPDATE
-        state.lastCheckedAt = saved.checkedAt || null
-      }
-    }
-    // 安装失败标记：以原版本启动且未升级 → 提示"安装失败，可稍后重试"（spec 5.4.3-4）
-    if (readInstallFailMarker()) {
-      state.status = STATUS.ERROR
-      state.errorReason = 'install-failed'
-    }
-  }
   return snapshot()
 }
 

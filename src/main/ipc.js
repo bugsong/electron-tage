@@ -1,5 +1,5 @@
 const { ipcMain, dialog } = require('electron')
-const { getDb, dbPath, configuredDataDir, moveDb } = require('./db')
+const { getDb, dbPath, configuredDataDir, moveDb, applyDecryptKey, getDbStatus } = require('./db')
 const { parseExcel } = require('./excel')
 const { sanitizeHtml } = require('../shared/sanitize')
 const { saveImage, getImage } = require('./images')
@@ -754,6 +754,12 @@ function registerSettingsHandlers() {
 
   // 迁移/初始化数据库到新位置
   ipcMain.handle('app:moveDb', (e, dir, opts) => moveDb(dir, opts))
+
+  // 数据库就绪状态（启动解密失败时前端据此展示恢复入口）
+  ipcMain.handle('app:dbStatus', () => getDbStatus())
+
+  // 对当前数据库应用解密密钥（设备唯一信息码），成功后 rekey 为本机密钥
+  ipcMain.handle('app:applyDecryptKey', (e, hex) => applyDecryptKey(hex))
 
   ipcMain.handle('settings:getAll', () => {
     const rows = getDb().prepare('SELECT key, value FROM settings').all()

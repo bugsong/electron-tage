@@ -71,15 +71,27 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 先获取设备唯一信息码作为数据库加密密钥（异步：依赖 PowerShell 硬件采集）
+  try {
+    const { getMachineCode } = require('./license')
+    const { setMachineKey } = require('./keyring')
+    const r = await getMachineCode()
+    if (r && r.ok && r.code) {
+      setMachineKey(r.code)
+    } else {
+      console.error('[db] 设备唯一信息码获取失败:', r && r.reason)
+    }
+  } catch (err) {
+    console.error('[db] 设备唯一信息码获取异常:', err)
+  }
+
   try {
     initDb()
     console.log('[db] SQLite 数据库位置:', dbPath())
   } catch (err) {
     console.error('[db] 初始化失败:', err)
-    dialog.showErrorBox('数据库初始化失败', String((err && err.message) || err))
-    app.quit()
-    return
+    // 不再直接退出：允许进入设置页，通过"数据库加解密"输入正确密钥恢复
   }
 
   // local-image:// 自定义协议：从数据库 BLOB 读取图片

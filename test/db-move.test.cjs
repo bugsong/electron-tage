@@ -9,7 +9,7 @@ const { test } = require('node:test')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
-const { freshUserData } = require('./helpers.cjs')
+const { freshUserData, useMachineKey } = require('./helpers.cjs')
 
 test('已有数据库迁移到新位置：数据完整、路径更新、旧文件清理', async () => {
   const oldDir = freshUserData()
@@ -43,39 +43,88 @@ test('已有数据库迁移到新位置：数据完整、路径更新、旧文�
   assert.ok(fs.existsSync(res.newPath), '新位置 tage.db 应存在')
 })
 
-test('目标已存在数据库文件：未强制返回 need_confirm，force 后覆盖迁移', async () => {
-  const oldDir = freshUserData()
+test('目标已有本软件数据库：返回 need_choose，继承保留目标数据且不删源', async () => {
+  useMachineKey()
+  const dirA = freshUserData()
   const { initDb, getDb, dbPath, moveDb } = require('../src/main/db')
   initDb()
-  const db = getDb()
-  const catId = db.prepare("SELECT id FROM categories WHERE name = '新思想'").get().id
   const t = Date.now()
+  let db = getDb()
+  const catIdA = db.prepare("SELECT id FROM categories WHERE name = '新思想'").get().id
   db.prepare(
     'INSERT INTO questions (category_id, type, stem, options, answer, analysis, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(catId, 'single', '覆盖测试题', '["a","b","c","d"]', 'B', '', 'manual', t, t)
+  ).run(catIdA, 'single', '目标数据A', '["a","b","c","d"]', 'A', '', 'manual', t, t)
+  db.close()
 
-  // 第一次迁移到 newDirA
-  const newDirA = path.join(oldDir, '..', 'moved-a')
-  assert.equal((await moveDb(newDirA)).status, 'ok')
+  // 把当前库迁移到 dirB，作为"目标位置已有本软件数据库"
+  const dirB = path.join(dirA, '..', 'target-lib')
+  assert.equal((await moveDb(dirB)).status, 'ok')
 
-  // 在 newDirB 放一个占位数据库文件
-  const newDirB = path.join(oldDir, '..', 'moved-b')
-  fs.mkdirSync(newDirB, { recursive: true })
-  fs.writeFileSync(path.join(newDirB, 'tage.db'), 'placeholder')
+  // 切到新 userData，创建当前库（数据 C）
+  const dirC = freshUserData()
+  initDb()
+  db = getDb()
+  const catIdC = db.prepare("SELECT id FROM categories WHERE name = '新思想'").get().id
+  db.prepare(
+    'INSERT INTO questions (category_id, type, stem, options, answer, analysis, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(catIdC, 'single', '当前数据C', '["a","b","c","d"]', 'C', '', 'manual', t, t)
+  db.close()
 
-  // 未强制 → need_confirm
-  const info = await moveDb(newDirB)
-  assert.equal(info.status, 'need_confirm')
-  assert.ok(info.message && info.message.length > 0)
-  assert.equal(dbPath(), path.join(path.resolve(newDirA), 'tage.db'), '确认前路径不应改变')
+  // 目标 dirB 有本软件库 → need_choose inherit_or_overwrite
+  const info = await moveDb(dirB)
+  assert.equal(info.status, 'need_choose')
+  assert.equal(info.mode, 'inherit_or_overwrite')
+  assert.equal(dbPath(), path.join(dirC, 'tage.db'), '选择前路径不应改变')
 
-  // force → 覆盖迁移成功
-  const res = await moveDb(newDirB, { force: true })
+  // 继承：使用目标库，保留目标数据
+  const res = await moveDb(dirB, { action: 'inherit' })
+  assert.equal(res.status, 'ok')
+  assert.equal(res.action, 'inherit')
+  assert.equal(dbPath(), path.join(path.resolve(dirB), 'tage.db'))
+  const qA = getDb().prepare("SELECT * FROM questions WHERE stem = '目标数据A'").get()
+  assert.ok(qA, '继承后应为目标库数据')
+  const qC = getDb().prepare("SELECT * FROM questions WHERE stem = '当前数据C'").get()
+  assert.ok(!qC, '继承不应带入当前库数据')
+  // 继承不删除原位置，用户可随时切回
+  assert.ok(fs.existsSync(path.join(dirC, 'tage.db')), '继承后原位置库应保留')
+})
+
+test('目标已有本软件数据库：覆盖用当前库替换目标并清理原位置', async () => {
+  useMachineKey()
+  const dirA = freshUserData()
+  const { initDb, getDb, dbPath, moveDb } = require('../src/main/db')
+  initDb()
+  const t = Date.now()
+  let db = getDb()
+  const catIdA = db.prepare("SELECT id FROM categories WHERE name = '新思想'").get().id
+  db.prepare(
+    'INSERT INTO questions (category_id, type, stem, options, answer, analysis, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(catIdA, 'single', '目标数据A', '["a","b","c","d"]', 'A', '', 'manual', t, t)
+  db.close()
+
+  const dirB = path.join(dirA, '..', 'target-lib2')
+  assert.equal((await moveDb(dirB)).status, 'ok')
+
+  const dirC = freshUserData()
+  initDb()
+  db = getDb()
+  const catIdC = db.prepare("SELECT id FROM categories WHERE name = '新思想'").get().id
+  db.prepare(
+    'INSERT INTO questions (category_id, type, stem, options, answer, analysis, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(catIdC, 'single', '当前数据C', '["a","b","c","d"]', 'C', '', 'manual', t, t)
+  db.close()
+
+  // 覆盖：用当前库替换目标
+  const res = await moveDb(dirB, { action: 'overwrite' })
   assert.equal(res.status, 'ok')
   assert.equal(res.action, 'migrate')
-  assert.equal(dbPath(), path.join(path.resolve(newDirB), 'tage.db'))
-  const q = getDb().prepare("SELECT * FROM questions WHERE stem = '覆盖测试题'").get()
-  assert.ok(q, 'force 覆盖后数据应来自当前库')
+  assert.equal(dbPath(), path.join(path.resolve(dirB), 'tage.db'))
+  const qC = getDb().prepare("SELECT * FROM questions WHERE stem = '当前数据C'").get()
+  assert.ok(qC, '覆盖后数据应来自当前库')
+  const qA = getDb().prepare("SELECT * FROM questions WHERE stem = '目标数据A'").get()
+  assert.ok(!qA, '覆盖后目标数据应被替换')
+  // 覆盖清理原位置
+  assert.ok(!fs.existsSync(path.join(dirC, 'tage.db')), '覆盖后原位置库应被清理')
 })
 
 test('当前无数据库：在新位置自动初始化', async () => {
